@@ -15,8 +15,6 @@ const nextConfig = {
 
   // Performance optimizations
   experimental: {
-    // Enable optimizeCss for production builds
-    optimizeCss: true,
     // Optimize package imports
     optimizePackageImports: [
       '@radix-ui/react-label',
