@@ -148,7 +148,7 @@ export default function ProjectDetailPage({ params }: PageProps) {
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-2 text-sm text-gray-600 mb-4">
-          <a href="/dashboard/projects" className="hover:text-blue-600">Projects</a>
+          <Link href="/dashboard/projects" className="hover:text-blue-600">Projects</Link>
           <span>/</span>
           <span>{project.name}</span>
         </div>
