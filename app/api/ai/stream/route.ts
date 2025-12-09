@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate API keys
+    // Validate API keys are configured
     const apiKeys = validateAPIKeys()
     if (!apiKeys.anthropic && !apiKeys.google) {
       return new Response(
@@ -110,8 +110,12 @@ export async function POST(request: NextRequest) {
           const useGoogle = normalizedTier === 'FREE'
 
           if (useGoogle && apiKeys.google) {
-            // Google Gemini streaming
-            const genAI = new GoogleGenerativeAI(apiKeys.google)
+            // Google Gemini streaming - use actual API key from env
+            const googleApiKey = process.env.GOOGLE_AI_API_KEY
+            if (!googleApiKey) {
+              throw new Error('Google API key not configured')
+            }
+            const genAI = new GoogleGenerativeAI(googleApiKey)
             const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
             const result = await model.generateContentStream([
@@ -125,8 +129,12 @@ export async function POST(request: NextRequest) {
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content: text })}\n\n`))
             }
           } else if (apiKeys.anthropic) {
-            // Anthropic Claude streaming
-            const anthropic = new Anthropic({ apiKey: apiKeys.anthropic })
+            // Anthropic Claude streaming - use actual API key from env
+            const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+            if (!anthropicApiKey) {
+              throw new Error('Anthropic API key not configured')
+            }
+            const anthropic = new Anthropic({ apiKey: anthropicApiKey })
             const modelName =
               normalizedTier === 'ADVANCED' || normalizedTier === 'PRO'
                 ? 'claude-sonnet-4-20250514'
