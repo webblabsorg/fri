@@ -3,7 +3,7 @@ import { prisma } from '../db'
 
 // Initialize Stripe client
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2024-12-18.acacia',
+  apiVersion: '2025-11-17.clover',
 })
 
 // Pricing configuration - stored in code, easily updatable
