@@ -71,11 +71,32 @@ export default function SettingsPage() {
     setProfileLoading(true)
     setProfileMessage('')
 
-    // Placeholder - API endpoint not yet created
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/user/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileData),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setProfileMessage(data.error || 'Failed to update profile')
+        return
+      }
+
+      // Update local user state
+      if (data.user) {
+        setUser(data.user)
+      }
+
       setProfileMessage('Profile updated successfully!')
+    } catch (error) {
+      console.error('Profile update error:', error)
+      setProfileMessage('Network error. Please try again.')
+    } finally {
       setProfileLoading(false)
-    }, 1000)
+    }
   }
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
@@ -90,16 +111,42 @@ export default function SettingsPage() {
       return
     }
 
-    // Placeholder - API endpoint not yet created
-    setTimeout(() => {
-      setPasswordMessage('Password changed successfully!')
+    try {
+      const response = await fetch('/api/user/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: passwordData.currentPassword,
+          newPassword: passwordData.newPassword,
+          confirmPassword: passwordData.confirmPassword,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        if (data.details) {
+          // Validation errors
+          const errors = Object.values(data.details).flat()
+          setPasswordError(errors.join(', '))
+        } else {
+          setPasswordError(data.error || 'Failed to change password')
+        }
+        return
+      }
+
+      setPasswordMessage(data.message || 'Password changed successfully!')
       setPasswordData({
         currentPassword: '',
         newPassword: '',
         confirmPassword: '',
       })
+    } catch (error) {
+      console.error('Password change error:', error)
+      setPasswordError('Network error. Please try again.')
+    } finally {
       setPasswordLoading(false)
-    }, 1000)
+    }
   }
 
   if (isLoading || !user) {

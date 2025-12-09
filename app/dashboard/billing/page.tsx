@@ -33,6 +33,29 @@ interface SubscriptionData {
   } | null
 }
 
+interface UsageData {
+  tier: string
+  currentPeriod: {
+    start: Date
+    end: Date
+  }
+  usage: {
+    requests: number
+    tokens: number
+    cost: number
+  }
+  quotas: {
+    maxRequests: number
+    maxTokens: number
+    maxCost: number
+  }
+  remaining: {
+    requests: number
+    tokens: number
+    cost: number
+  }
+}
+
 const PRICING_PLANS = {
   FREE: { name: 'Free', price: 0, features: ['50 AI requests/month', '100k tokens', 'Gemini Flash', 'Basic support'] },
   PRO: { name: 'Pro', price: 49, features: ['1,000 AI requests/month', '5M tokens', 'Claude Sonnet', 'Priority support', 'API access'] },
@@ -46,6 +69,8 @@ function BillingContent() {
   const [loading, setLoading] = useState(true)
   const [upgrading, setUpgrading] = useState(false)
   const [data, setData] = useState<SubscriptionData | null>(null)
+  const [usageData, setUsageData] = useState<UsageData | null>(null)
+  const [usageError, setUsageError] = useState<string | null>(null)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -56,18 +81,31 @@ function BillingContent() {
       setMessage('Checkout cancelled')
     }
 
-    fetchSubscriptionData()
+    fetchData()
   }, [])
 
-  const fetchSubscriptionData = async () => {
+  const fetchData = async () => {
     try {
-      const response = await fetch('/api/stripe/subscription')
-      if (response.ok) {
-        const subscriptionData = await response.json()
+      // Fetch subscription and usage data in parallel
+      const [subscriptionResponse, usageResponse] = await Promise.all([
+        fetch('/api/stripe/subscription'),
+        fetch('/api/ai/usage'),
+      ])
+
+      if (subscriptionResponse.ok) {
+        const subscriptionData = await subscriptionResponse.json()
         setData(subscriptionData)
       }
+
+      if (usageResponse.ok) {
+        const usage = await usageResponse.json()
+        setUsageData(usage)
+      } else {
+        setUsageError('Unable to load usage statistics')
+      }
     } catch (error) {
-      console.error('Error fetching subscription:', error)
+      console.error('Error fetching data:', error)
+      setUsageError('Failed to load usage data')
     } finally {
       setLoading(false)
     }
@@ -175,6 +213,111 @@ function BillingContent() {
             </div>
           </CardContent>
         </Card>
+
+        {/* AI Usage Stats */}
+        {usageData ? (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>AI Usage This Month</CardTitle>
+              <CardDescription>
+                Current billing period: {new Date(usageData.currentPeriod.start).toLocaleDateString()} - {new Date(usageData.currentPeriod.end).toLocaleDateString()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Requests */}
+                <div>
+                  <div className="flex justify-between items-baseline mb-2">
+                    <p className="text-sm text-gray-600">AI Requests</p>
+                    <p className="text-xs text-gray-500">
+                      {usageData.quotas.maxRequests === Infinity 
+                        ? 'Unlimited' 
+                        : `${usageData.remaining.requests} remaining`}
+                    </p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-bold">{usageData.usage.requests.toLocaleString()}</p>
+                    {usageData.quotas.maxRequests !== Infinity && (
+                      <p className="text-sm text-gray-500">/ {usageData.quotas.maxRequests.toLocaleString()}</p>
+                    )}
+                  </div>
+                  {usageData.quotas.maxRequests !== Infinity && (
+                    <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-600 h-2 rounded-full"
+                        style={{
+                          width: `${Math.min(100, (usageData.usage.requests / usageData.quotas.maxRequests) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Tokens */}
+                <div>
+                  <div className="flex justify-between items-baseline mb-2">
+                    <p className="text-sm text-gray-600">Tokens</p>
+                    <p className="text-xs text-gray-500">
+                      {usageData.quotas.maxTokens === Infinity 
+                        ? 'Unlimited' 
+                        : `${(usageData.remaining.tokens / 1000).toFixed(0)}k remaining`}
+                    </p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-bold">{(usageData.usage.tokens / 1000).toFixed(1)}k</p>
+                    {usageData.quotas.maxTokens !== Infinity && (
+                      <p className="text-sm text-gray-500">/ {(usageData.quotas.maxTokens / 1000).toFixed(0)}k</p>
+                    )}
+                  </div>
+                  {usageData.quotas.maxTokens !== Infinity && (
+                    <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-green-600 h-2 rounded-full"
+                        style={{
+                          width: `${Math.min(100, (usageData.usage.tokens / usageData.quotas.maxTokens) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Cost */}
+                <div>
+                  <div className="flex justify-between items-baseline mb-2">
+                    <p className="text-sm text-gray-600">Cost</p>
+                    <p className="text-xs text-gray-500">
+                      {usageData.quotas.maxCost === Infinity || usageData.quotas.maxCost === 0
+                        ? currentTier === 'FREE' ? 'Free tier' : 'Unlimited'
+                        : `$${usageData.remaining.cost.toFixed(2)} remaining`}
+                    </p>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <p className="text-2xl font-bold">${usageData.usage.cost.toFixed(2)}</p>
+                    {usageData.quotas.maxCost !== Infinity && usageData.quotas.maxCost > 0 && (
+                      <p className="text-sm text-gray-500">/ ${usageData.quotas.maxCost.toFixed(2)}</p>
+                    )}
+                  </div>
+                  {usageData.quotas.maxCost !== Infinity && usageData.quotas.maxCost > 0 && (
+                    <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-purple-600 h-2 rounded-full"
+                        style={{
+                          width: `${Math.min(100, (usageData.usage.cost / usageData.quotas.maxCost) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : usageError ? (
+          <Card className="mb-8">
+            <CardContent className="p-6">
+              <p className="text-amber-600">⚠️ {usageError}</p>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/* Pricing Plans */}
         <div className="mb-8">

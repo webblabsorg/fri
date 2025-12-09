@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { executeAITool } from '@/lib/ai/tool-executor'
 import { LegalPromptType } from '@/lib/ai/prompt-builder'
-import { SubscriptionTier } from '@/lib/ai/model-service'
+import { SubscriptionTier, normalizeTier } from '@/lib/ai/model-service'
+import { prisma } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,13 +55,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Execute tool
+    // Look up tool by slug (toolId is actually a slug from the client)
+    const tool = await prisma.tool.findUnique({
+      where: { slug: toolId },
+      select: { id: true, name: true, isActive: true },
+    })
+
+    if (!tool) {
+      return NextResponse.json(
+        { error: `Tool not found: ${toolId}` },
+        { status: 404 }
+      )
+    }
+
+    if (!tool.isActive) {
+      return NextResponse.json(
+        { error: `Tool is currently unavailable: ${tool.name}` },
+        { status: 403 }
+      )
+    }
+
+    // Execute tool with the actual UUID
+    const userTier = normalizeTier(user.subscriptionTier)
+    
     const result = await executeAITool({
       toolType,
       context,
       userId: user.id,
-      toolId,
-      tier: user.subscriptionTier as SubscriptionTier,
+      toolId: tool.id, // Use UUID from database
+      tier: userTier,
     })
 
     if (!result.success) {

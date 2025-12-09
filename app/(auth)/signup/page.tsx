@@ -64,6 +64,8 @@ export default function SignUpPage() {
       }
 
       setSuccessMessage(data.message)
+      // Store email in sessionStorage for resend functionality
+      sessionStorage.setItem('signup_email', formData.email)
       // Redirect to check email page after 2 seconds
       setTimeout(() => {
         router.push('/verify-email')

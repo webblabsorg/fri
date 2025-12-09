@@ -1,5 +1,5 @@
-// Email service using Resend (placeholder implementation)
-// In production, install and configure Resend: npm install resend
+// Email service using Resend
+// Install with: npm install resend
 
 interface SendEmailOptions {
   to: string
@@ -7,39 +7,66 @@ interface SendEmailOptions {
   html: string
 }
 
+/**
+ * Send an email using Resend API
+ * In development, logs email content to console
+ * In production, sends via Resend if properly configured
+ */
 export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
-  // Placeholder implementation
-  // In production, use Resend API
-  console.log('📧 Email would be sent:', {
+  const isDevelopment = process.env.NODE_ENV === 'development'
+  
+  // Log email intent in all environments
+  console.log('📧 Sending email:', {
     to: options.to,
     subject: options.subject,
+    environment: process.env.NODE_ENV,
   })
 
-  // Simulate email sending in development
-  if (process.env.NODE_ENV === 'development') {
-    console.log('Email content:', options.html)
+  // In development, just log and return success
+  if (isDevelopment) {
+    console.log('Email content preview (development mode):')
+    console.log(options.html.substring(0, 500) + '...')
     return true
   }
 
-  // Production implementation (commented out until Resend is configured):
-  /*
-  const resend = new Resend(process.env.RESEND_API_KEY)
+  // Production: Validate environment variables
+  const apiKey = process.env.RESEND_API_KEY
+  const fromEmail = process.env.RESEND_FROM_EMAIL
   
+  if (!apiKey) {
+    console.error('RESEND_API_KEY not configured')
+    return false
+  }
+
+  if (!fromEmail) {
+    console.error('RESEND_FROM_EMAIL not configured')
+    return false
+  }
+
+  // Production: Send email via Resend
   try {
-    await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL || 'noreply@frithai.com',
+    // Dynamic import to avoid build-time errors if resend package is missing
+    const { Resend } = await import('resend')
+    const resend = new Resend(apiKey)
+    
+    const { data, error } = await resend.emails.send({
+      from: fromEmail,
       to: options.to,
       subject: options.subject,
       html: options.html,
     })
+
+    if (error) {
+      console.error('Resend API error:', error)
+      return false
+    }
+
+    console.log('✅ Email sent successfully:', data)
     return true
   } catch (error) {
-    console.error('Email send error:', error)
+    console.error('Failed to send email:', error)
     return false
   }
-  */
-
-  return true
 }
 
 export function getVerificationEmailTemplate(

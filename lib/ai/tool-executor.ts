@@ -1,4 +1,4 @@
-import { generateAIResponse, AIGenerateOptions, AIGenerateResult, SubscriptionTier } from './model-service'
+import { generateAIResponse, AIGenerateOptions, AIGenerateResult, SubscriptionTier, normalizeTier } from './model-service'
 import { buildLegalPrompt, LegalPromptType, PromptContext } from './prompt-builder'
 import { prisma } from '../db'
 
@@ -33,8 +33,10 @@ export async function executeAITool(
       throw new Error('User not found')
     }
 
+    // Normalize tier from database value
+    const userTier = normalizeTier(user.subscriptionTier)
+    
     // Check if user's tier allows this tool
-    const userTier = user.subscriptionTier as SubscriptionTier
     if (!isToolAllowedForTier(userTier, tier)) {
       throw new Error('Tool not available for your subscription tier')
     }
@@ -130,10 +132,11 @@ function isToolAllowedForTier(
   userTier: SubscriptionTier,
   requiredTier: SubscriptionTier
 ): boolean {
-  const tierHierarchy = {
+  const tierHierarchy: Record<SubscriptionTier, number> = {
     FREE: 0,
     PRO: 1,
-    ENTERPRISE: 2,
+    PROFESSIONAL: 2,
+    ENTERPRISE: 3,
   }
 
   return tierHierarchy[userTier] >= tierHierarchy[requiredTier]
@@ -195,7 +198,7 @@ async function checkUsageQuota(
 
 // Get quotas for a subscription tier
 function getQuotasForTier(tier: SubscriptionTier) {
-  const quotas = {
+  const quotas: Record<SubscriptionTier, { maxRequests: number; maxTokens: number; maxCost: number }> = {
     FREE: {
       maxRequests: 50, // 50 requests per month
       maxTokens: 100000, // 100k tokens per month
@@ -205,6 +208,11 @@ function getQuotasForTier(tier: SubscriptionTier) {
       maxRequests: 1000, // 1000 requests per month
       maxTokens: 5000000, // 5M tokens per month
       maxCost: 100, // $100 per month
+    },
+    PROFESSIONAL: {
+      maxRequests: 5000, // 5000 requests per month
+      maxTokens: 20000000, // 20M tokens per month
+      maxCost: 500, // $500 per month
     },
     ENTERPRISE: {
       maxRequests: Infinity, // Unlimited
@@ -251,7 +259,7 @@ export async function getUserUsageStats(userId: string) {
     select: { subscriptionTier: true },
   })
 
-  const tier = (user?.subscriptionTier as SubscriptionTier) || 'FREE'
+  const tier = normalizeTier(user?.subscriptionTier)
   const quotas = getQuotasForTier(tier)
 
   return {

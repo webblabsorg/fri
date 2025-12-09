@@ -36,6 +36,12 @@ export const MODELS = {
     maxTokens: 8192,
     costPer1kTokens: 0.003, // $3 per 1M tokens
   },
+  PROFESSIONAL: {
+    provider: 'anthropic',
+    model: 'claude-3-5-sonnet-20241022',
+    maxTokens: 8192,
+    costPer1kTokens: 0.003, // Same as PRO
+  },
   ENTERPRISE: {
     provider: 'anthropic',
     model: 'claude-3-opus-20240229',
@@ -46,6 +52,25 @@ export const MODELS = {
 
 export type SubscriptionTier = keyof typeof MODELS
 export type AIProvider = 'anthropic' | 'google'
+
+/**
+ * Normalize database subscription tier values to MODELS keys
+ * Handles case-insensitive matching and maps DB values to valid tiers
+ */
+export function normalizeTier(dbTier: string | null | undefined): SubscriptionTier {
+  if (!dbTier) return 'FREE'
+  
+  const normalized = dbTier.toUpperCase() as SubscriptionTier
+  
+  // Validate against MODELS keys
+  if (normalized in MODELS) {
+    return normalized
+  }
+  
+  // Fallback to FREE for unknown values
+  console.warn(`Unknown subscription tier: ${dbTier}, falling back to FREE`)
+  return 'FREE'
+}
 
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system'
