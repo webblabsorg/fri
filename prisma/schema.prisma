@@ -31,6 +31,9 @@ model User {
   marketingOptIn      Boolean   @default(false)
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
+  onboardingCompleted Boolean   @default(false)
+  onboardingRole      String?   // Solo, Associate, Partner, In-House Counsel, etc.
+  onboardingPracticeAreas Json?  // Array of practice areas selected
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
   lastLoginAt         DateTime?

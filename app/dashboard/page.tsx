@@ -31,6 +31,12 @@ export default function DashboardPage() {
         return
       }
 
+      // Redirect to onboarding if not completed
+      if (!data.user.onboardingCompleted) {
+        router.push('/welcome')
+        return
+      }
+
       setUser(data.user)
     } catch (error) {
       console.error('Session check error:', error)
