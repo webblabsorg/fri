@@ -153,7 +153,7 @@ async function checkUsageQuota(
     where: {
       userId,
       createdAt: { gte: startOfMonth },
-      status: 'COMPLETED',
+      status: 'completed',
     },
     _count: true,
     _sum: {
