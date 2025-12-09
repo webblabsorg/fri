@@ -2,15 +2,27 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Document, Paragraph, Packer, TextRun, HeadingLevel } from 'docx'
+import { saveAs } from 'file-saver'
 import { ToolConfig } from '@/lib/tools/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
+import { SaveToProjectModal } from './SaveToProjectModal'
 
 interface ToolDetailPageProps {
   tool: ToolConfig
   userTier: 'free' | 'starter' | 'pro' | 'advanced'
+}
+
+interface ExecutionMetadata {
+  executionId: string
+  model: string
+  provider: string
+  tokensUsed: number
+  cost: number
+  timestamp: Date
 }
 
 export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
@@ -19,6 +31,9 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
   const [isRunning, setIsRunning] = useState(false)
   const [output, setOutput] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [executionMetadata, setExecutionMetadata] = useState<ExecutionMetadata | null>(null)
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
+  const [copySuccess, setCopySuccess] = useState(false)
 
   const canUseTool = checkToolAccess(tool.requiredTier, userTier)
   const aiModel = tool.aiModel[userTier]
@@ -50,10 +65,91 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
 
       const data = await response.json()
       setOutput(data.content)
+      
+      // Store execution metadata for provenance
+      if (data.executionId) {
+        setExecutionMetadata({
+          executionId: data.executionId,
+          model: data.model || aiModel,
+          provider: data.provider || 'unknown',
+          tokensUsed: data.tokensUsed || 0,
+          cost: data.cost || 0,
+          timestamp: new Date(),
+        })
+      }
     } catch (err: any) {
       setError(err.message || 'An error occurred')
     } finally {
       setIsRunning(false)
+    }
+  }
+
+  const handleCopy = async () => {
+    if (!output) return
+
+    try {
+      await navigator.clipboard.writeText(output)
+      setCopySuccess(true)
+      setTimeout(() => setCopySuccess(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }
+
+  const handleExportDOCX = async () => {
+    if (!output) return
+
+    try {
+      // Create document
+      const doc = new Document({
+        sections: [{
+          properties: {},
+          children: [
+            new Paragraph({
+              text: tool.name,
+              heading: HeadingLevel.HEADING_1,
+            }),
+            new Paragraph({
+              text: `Generated: ${new Date().toLocaleString()}`,
+              spacing: { after: 200 },
+            }),
+            new Paragraph({
+              text: `AI Model: ${executionMetadata?.model || aiModel}`,
+              spacing: { after: 400 },
+            }),
+            ...output.split('\n\n').map(paragraph =>
+              new Paragraph({
+                children: [new TextRun(paragraph)],
+                spacing: { after: 200 },
+              })
+            ),
+          ],
+        }],
+      })
+
+      // Generate and download
+      const blob = await Packer.toBlob(doc)
+      const fileName = `${tool.slug}-${Date.now()}.docx`
+      saveAs(blob, fileName)
+    } catch (err) {
+      console.error('Failed to export DOCX:', err)
+    }
+  }
+
+  const handleSaveToProject = async (projectId: string) => {
+    if (!executionMetadata?.executionId) {
+      throw new Error('No execution ID available')
+    }
+
+    // Link the tool run to the project
+    const response = await fetch(`/api/tool-runs/${executionMetadata.executionId}/link-project`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to save to project')
     }
   }
 
@@ -184,17 +280,64 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
                     {output}
                   </div>
 
+                  {/* Action Buttons */}
                   <div className="flex gap-2 mt-4">
-                    <Button variant="outline" size="sm">
-                      Copy
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleCopy}
+                    >
+                      {copySuccess ? '✓ Copied!' : 'Copy'}
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={handleExportDOCX}
+                    >
                       Export DOCX
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => setIsSaveModalOpen(true)}
+                      disabled={!executionMetadata?.executionId}
+                    >
                       Save to Project
                     </Button>
                   </div>
+
+                  {/* Provenance Panel */}
+                  {executionMetadata && (
+                    <div className="mt-6 p-4 bg-blue-50 rounded-md border border-blue-200">
+                      <h3 className="text-sm font-semibold mb-3 text-blue-900">Execution Details</h3>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <span className="text-blue-700 font-medium">AI Model:</span>
+                          <span className="ml-2 text-blue-900">{executionMetadata.model}</span>
+                        </div>
+                        <div>
+                          <span className="text-blue-700 font-medium">Provider:</span>
+                          <span className="ml-2 text-blue-900 capitalize">{executionMetadata.provider}</span>
+                        </div>
+                        <div>
+                          <span className="text-blue-700 font-medium">Tokens Used:</span>
+                          <span className="ml-2 text-blue-900">{executionMetadata.tokensUsed.toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-blue-700 font-medium">Cost:</span>
+                          <span className="ml-2 text-blue-900">${executionMetadata.cost.toFixed(4)}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-blue-700 font-medium">Generated:</span>
+                          <span className="ml-2 text-blue-900">{executionMetadata.timestamp.toLocaleString()}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-blue-700 font-medium">Execution ID:</span>
+                          <span className="ml-2 text-blue-900 text-xs font-mono">{executionMetadata.executionId}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -267,6 +410,14 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
           )}
         </div>
       </div>
+
+      {/* Save to Project Modal */}
+      <SaveToProjectModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        onSave={handleSaveToProject}
+        toolRunId={executionMetadata?.executionId}
+      />
     </div>
   )
 }
