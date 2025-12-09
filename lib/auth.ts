@@ -85,7 +85,7 @@ export async function generateEmailVerificationToken(userId: string): Promise<st
 
 export async function verifyEmailToken(token: string): Promise<string | null> {
   const decoded = verifyToken(token)
-  if (!decoded || decoded.type !== 'email_verification') {
+  if (!decoded || decoded.type !== 'email_verification' || !decoded.userId) {
     return null
   }
 
@@ -129,7 +129,7 @@ export async function generatePasswordResetToken(userId: string): Promise<string
 
 export async function verifyPasswordResetToken(token: string): Promise<string | null> {
   const decoded = verifyToken(token)
-  if (!decoded || decoded.type !== 'password_reset') {
+  if (!decoded || decoded.type !== 'password_reset' || !decoded.userId) {
     return null
   }
 
