@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SearchButton } from '@/components/search/SearchButton'
 
 interface User {
   id: string
@@ -81,6 +82,7 @@ export default function DashboardPage() {
               <h1 className="text-2xl font-bold">Frith AI</h1>
             </div>
             <div className="flex items-center gap-4">
+              <SearchButton />
               <span className="text-sm text-gray-600">{user.name}</span>
               <button
                 onClick={handleSignOut}
