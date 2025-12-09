@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,7 +40,7 @@ const PRICING_PLANS = {
   ENTERPRISE: { name: 'Enterprise', price: 499, features: ['Unlimited requests', 'Unlimited tokens', 'Claude Opus', 'Dedicated support', 'SLA guarantee'] },
 }
 
-export default function BillingPage() {
+function BillingContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
@@ -314,5 +314,19 @@ export default function BillingPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function BillingPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 py-12 px-4">
+        <div className="max-w-6xl mx-auto text-center">
+          <p>Loading billing information...</p>
+        </div>
+      </div>
+    }>
+      <BillingContent />
+    </Suspense>
   )
 }
