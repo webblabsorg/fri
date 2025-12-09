@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { SaveToProjectModal } from './SaveToProjectModal'
+import { SaveAsTemplateModal } from '@/components/templates/SaveAsTemplateModal'
+import { TemplateLibrary } from '@/components/templates/TemplateLibrary'
 
 interface ToolDetailPageProps {
   tool: ToolConfig
@@ -39,6 +41,8 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
   const [executionMetadata, setExecutionMetadata] = useState<ExecutionMetadata | null>(null)
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false)
   const [copySuccess, setCopySuccess] = useState(false)
+  const [isSaveTemplateModalOpen, setIsSaveTemplateModalOpen] = useState(false)
+  const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false)
 
   const canUseTool = checkToolAccess(tool.requiredTier, userTier)
   const aiModel = tool.aiModel[userTier]
@@ -158,6 +162,40 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
     }
   }
 
+  const handleSaveAsTemplate = async (name: string, description: string, category: string) => {
+    const response = await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        toolId: tool.id,
+        name,
+        description,
+        category,
+        content: formData,
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to save template')
+    }
+  }
+
+  const handleLoadTemplate = async (templateId: string) => {
+    try {
+      const response = await fetch(`/api/templates/${templateId}`)
+      
+      if (response.ok) {
+        const data = await response.json()
+        setFormData(data.template.content)
+        setIsTemplateLibraryOpen(false)
+      } else {
+        alert('Failed to load template')
+      }
+    } catch (err) {
+      alert('Error loading template')
+    }
+  }
+
   if (!canUseTool) {
     return (
       <div className="container max-w-4xl py-12">
@@ -257,14 +295,24 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
                 </div>
               ))}
 
-              <Button
-                onClick={handleRunTool}
-                disabled={isRunning}
-                className="w-full"
-                size="lg"
-              >
-                {isRunning ? 'Running Tool...' : `Run ${tool.name}`}
-              </Button>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsSaveTemplateModalOpen(true)}
+                  disabled={isRunning}
+                  size="lg"
+                >
+                  💾 Save as Template
+                </Button>
+                <Button
+                  onClick={handleRunTool}
+                  disabled={isRunning}
+                  className="flex-1"
+                  size="lg"
+                >
+                  {isRunning ? 'Running Tool...' : `Run ${tool.name}`}
+                </Button>
+              </div>
             </div>
           </Card>
 
@@ -443,6 +491,22 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
         onClose={() => setIsSaveModalOpen(false)}
         onSave={handleSaveToProject}
         toolRunId={executionMetadata?.executionId}
+      />
+
+      {/* Save as Template Modal */}
+      <SaveAsTemplateModal
+        isOpen={isSaveTemplateModalOpen}
+        onClose={() => setIsSaveTemplateModalOpen(false)}
+        onSave={handleSaveAsTemplate}
+        toolId={tool.id}
+      />
+
+      {/* Template Library */}
+      <TemplateLibrary
+        isOpen={isTemplateLibraryOpen}
+        onClose={() => setIsTemplateLibraryOpen(false)}
+        onSelectTemplate={handleLoadTemplate}
+        toolId={tool.id}
       />
     </div>
   )
