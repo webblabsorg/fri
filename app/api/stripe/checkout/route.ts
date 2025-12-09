@@ -35,22 +35,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const plan = PRICING_PLANS[tier as PricingTier]
-
-    if (!plan.priceId) {
-      return NextResponse.json(
-        { error: 'Price ID not configured for this tier' },
-        { status: 400 }
-      )
-    }
-
-    // Create checkout session
+    // Create checkout session with dynamic pricing
     const successUrl = `${process.env.NEXTAUTH_URL}/dashboard/billing?success=true`
     const cancelUrl = `${process.env.NEXTAUTH_URL}/dashboard/billing?cancelled=true`
 
     const session = await createCheckoutSession(
       user.id,
-      plan.priceId,
+      tier as PricingTier,
       successUrl,
       cancelUrl
     )

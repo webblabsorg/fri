@@ -6,11 +6,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2024-12-18.acacia',
 })
 
-// Pricing configuration
+// Pricing configuration - stored in code, easily updatable
 export const PRICING_PLANS = {
   FREE: {
     name: 'Free',
-    priceId: null, // No Stripe price for free tier
     price: 0,
     interval: null,
     features: [
@@ -20,10 +19,10 @@ export const PRICING_PLANS = {
       'Basic legal tools',
       'Email support',
     ],
+    description: 'Perfect for trying out the platform',
   },
   PRO: {
     name: 'Pro',
-    priceId: process.env.STRIPE_PRO_PRICE_ID || '',
     price: 49,
     interval: 'month' as const,
     features: [
@@ -34,10 +33,10 @@ export const PRICING_PLANS = {
       'Priority email support',
       'API access',
     ],
+    description: 'For individual legal professionals',
   },
   PROFESSIONAL: {
     name: 'Professional',
-    priceId: process.env.STRIPE_PROFESSIONAL_PRICE_ID || '',
     price: 149,
     interval: 'month' as const,
     features: [
@@ -50,10 +49,10 @@ export const PRICING_PLANS = {
       'Team collaboration (5 seats)',
       'Custom integrations',
     ],
+    description: 'For small to medium law firms',
   },
   ENTERPRISE: {
     name: 'Enterprise',
-    priceId: process.env.STRIPE_ENTERPRISE_PRICE_ID || '',
     price: 499,
     interval: 'month' as const,
     features: [
@@ -68,6 +67,7 @@ export const PRICING_PLANS = {
       'SLA guarantee',
       'Custom training',
     ],
+    description: 'For large law firms and enterprises',
   },
 } as const
 
@@ -112,35 +112,63 @@ export async function getOrCreateStripeCustomer(userId: string) {
   return customer.id
 }
 
-// Create checkout session for subscription
+// Create checkout session with dynamic pricing (no pre-created prices needed!)
 export async function createCheckoutSession(
   userId: string,
-  priceId: string,
+  tier: PricingTier,
   successUrl: string,
   cancelUrl: string
 ) {
   const customerId = await getOrCreateStripeCustomer(userId)
+  const plan = PRICING_PLANS[tier]
 
+  if (!plan || plan.price === 0) {
+    throw new Error('Invalid pricing tier')
+  }
+
+  // Create checkout session with dynamic price_data
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     payment_method_types: ['card'],
     line_items: [
       {
-        price: priceId,
+        price_data: {
+          currency: 'usd',
+          unit_amount: plan.price * 100, // Convert to cents
+          recurring: plan.interval
+            ? {
+                interval: plan.interval,
+                interval_count: 1,
+              }
+            : undefined,
+          product_data: {
+            name: `Frith AI ${plan.name} Plan`,
+            description: plan.description,
+            metadata: {
+              tier: tier.toLowerCase(),
+              plan_name: plan.name,
+            },
+          },
+        },
         quantity: 1,
       },
     ],
-    mode: 'subscription',
+    mode: plan.interval ? 'subscription' : 'payment',
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: {
       userId,
+      tier: tier.toLowerCase(),
+      plan_name: plan.name,
     },
-    subscription_data: {
-      metadata: {
-        userId,
-      },
-    },
+    subscription_data: plan.interval
+      ? {
+          metadata: {
+            userId,
+            tier: tier.toLowerCase(),
+          },
+        }
+      : undefined,
   })
 
   return session
@@ -178,25 +206,58 @@ export async function cancelSubscription(subscriptionId: string) {
   return await stripe.subscriptions.cancel(subscriptionId)
 }
 
-// Update subscription
+// Update subscription to new tier
 export async function updateSubscription(
   subscriptionId: string,
-  priceId: string
+  newTier: PricingTier
 ) {
   const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+  const plan = PRICING_PLANS[newTier]
 
-  return await stripe.subscriptions.update(subscriptionId, {
+  if (!plan || plan.price === 0) {
+    throw new Error('Invalid pricing tier')
+  }
+
+  // Cancel current subscription and create new one
+  // (Stripe doesn't allow updating price_data, so we recreate)
+  await stripe.subscriptions.cancel(subscriptionId)
+
+  const customerId = subscription.customer as string
+
+  const newSubscription = await stripe.subscriptions.create({
+    customer: customerId,
     items: [
       {
-        id: subscription.items.data[0].id,
-        price: priceId,
+        price_data: {
+          currency: 'usd',
+          unit_amount: plan.price * 100,
+          recurring: plan.interval
+            ? {
+                interval: plan.interval,
+                interval_count: 1,
+              }
+            : undefined,
+          product_data: {
+            name: `Frith AI ${plan.name} Plan`,
+            description: plan.description,
+            metadata: {
+              tier: newTier.toLowerCase(),
+              plan_name: plan.name,
+            },
+          },
+        },
       },
     ],
+    metadata: {
+      tier: newTier.toLowerCase(),
+    },
     proration_behavior: 'create_prorations',
   })
+
+  return newSubscription
 }
 
-// Handle successful payment (webhook)
+// Handle successful payment (webhook) - reads tier from metadata
 export async function handleSuccessfulPayment(
   subscriptionId: string,
   customerId: string
@@ -212,16 +273,9 @@ export async function handleSuccessfulPayment(
     throw new Error('User not found for customer')
   }
 
-  // Determine tier from price ID
-  const priceId = subscription.items.data[0].price.id
-  let tier: string = 'free'
-
-  for (const [key, plan] of Object.entries(PRICING_PLANS)) {
-    if (plan.priceId === priceId) {
-      tier = key.toLowerCase()
-      break
-    }
-  }
+  // Get tier from subscription metadata (much more reliable!)
+  const tier = subscription.metadata.tier || 'free'
+  const amount = (subscription.items.data[0].price.unit_amount || 0) / 100
 
   // Update user subscription status
   await prisma.user.update({
@@ -237,7 +291,7 @@ export async function handleSuccessfulPayment(
     data: {
       userId: user.id,
       stripePaymentId: subscription.latest_invoice as string,
-      amount: (subscription.items.data[0].price.unit_amount || 0) / 100,
+      amount,
       currency: subscription.currency.toUpperCase(),
       status: 'succeeded',
       type: 'subscription',
