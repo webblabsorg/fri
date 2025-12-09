@@ -231,12 +231,10 @@ export async function updateSubscription(
         price_data: {
           currency: 'usd',
           unit_amount: plan.price * 100,
-          recurring: plan.interval
-            ? {
-                interval: plan.interval,
-                interval_count: 1,
-              }
-            : undefined,
+          recurring: {
+            interval: plan.interval || 'month',
+            interval_count: 1,
+          },
           product_data: {
             name: `Frith AI ${plan.name} Plan`,
             description: plan.description,
