@@ -65,7 +65,7 @@ export async function PATCH(request: NextRequest) {
       data: {
         userId: user.id,
         eventType: 'profile_updated',
-        details: {
+        eventData: {
           changes: {
             name: name !== user.name ? { from: user.name, to: name } : undefined,
             firmName: firmName !== user.firmName ? { from: user.firmName, to: firmName } : undefined,

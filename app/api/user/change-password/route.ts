@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         id: true,
         passwordHash: true,
         failedLoginAttempts: true,
-        accountLockedUntil: true,
+        lockedUntil: true,
       },
     })
 
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
       data: {
         passwordHash: newPasswordHash,
         failedLoginAttempts: 0,
-        accountLockedUntil: null,
+        lockedUntil: null,
         updatedAt: new Date(),
       },
     })
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     await prisma.session.deleteMany({
       where: {
         userId: user.id,
-        token: {
+        sessionToken: {
           not: sessionToken,
         },
       },
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
       data: {
         userId: user.id,
         eventType: 'password_changed',
-        details: {
+        eventData: {
           sessionsInvalidated: true,
           timestamp: new Date().toISOString(),
         },
