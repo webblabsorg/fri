@@ -10,7 +10,7 @@ export const optimizedQueries = {
    */
   async getUserProjectsSummary(userId: string) {
     return prisma.project.findMany({
-      where: { userId },
+      where: { user: { id: userId } },
       select: {
         id: true,
         name: true,
@@ -36,7 +36,7 @@ export const optimizedQueries = {
 
     const [templates, total] = await Promise.all([
       prisma.template.findMany({
-        where: { userId },
+        where: { user: { id: userId } },
         select: {
           id: true,
           name: true,
@@ -49,7 +49,7 @@ export const optimizedQueries = {
         skip,
         take: limit,
       }),
-      prisma.template.count({ where: { userId } }),
+      prisma.template.count({ where: { user: { id: userId } } }),
     ])
 
     return {
@@ -65,7 +65,7 @@ export const optimizedQueries = {
    */
   async getUserToolRuns(userId: string, limit = 50) {
     return prisma.toolRun.findMany({
-      where: { userId },
+      where: { user: { id: userId } },
       select: {
         id: true,
         toolId: true,
@@ -86,7 +86,7 @@ export const optimizedQueries = {
    */
   async getToolRunDetails(id: string, userId: string) {
     return prisma.toolRun.findFirst({
-      where: { id, userId },
+      where: { id, user: { id: userId } },
       include: {
         project: {
           select: {
@@ -103,11 +103,11 @@ export const optimizedQueries = {
    */
   async getUserStats(userId: string) {
     const [projectCount, templateCount, toolRunCount, recentActivity] = await Promise.all([
-      prisma.project.count({ where: { userId } }),
-      prisma.template.count({ where: { userId } }),
-      prisma.toolRun.count({ where: { userId, status: 'completed' } }),
+      prisma.project.count({ where: { user: { id: userId } } }),
+      prisma.template.count({ where: { user: { id: userId } } }),
+      prisma.toolRun.count({ where: { user: { id: userId }, status: 'completed' } }),
       prisma.toolRun.findMany({
-        where: { userId, status: 'completed' },
+        where: { user: { id: userId }, status: 'completed' },
         select: {
           id: true,
           toolId: true,
@@ -130,12 +130,10 @@ export const optimizedQueries = {
    * Search with optimized fields
    */
   async searchUserContent(userId: string, query: string) {
-    const searchTerm = `%${query}%`
-
     const [projects, templates, toolRuns] = await Promise.all([
       prisma.project.findMany({
         where: {
-          userId,
+          user: { id: userId },
           OR: [
             { name: { contains: query, mode: 'insensitive' } },
             { description: { contains: query, mode: 'insensitive' } },
@@ -151,7 +149,7 @@ export const optimizedQueries = {
       }),
       prisma.template.findMany({
         where: {
-          userId,
+          user: { id: userId },
           OR: [
             { name: { contains: query, mode: 'insensitive' } },
             { description: { contains: query, mode: 'insensitive' } },
@@ -167,7 +165,7 @@ export const optimizedQueries = {
       }),
       prisma.toolRun.findMany({
         where: {
-          userId,
+          user: { id: userId },
           OR: [
             { inputText: { contains: query, mode: 'insensitive' } },
             { outputText: { contains: query, mode: 'insensitive' } },

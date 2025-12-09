@@ -3,9 +3,6 @@ const nextConfig = {
   // Enable React strict mode for better development experience
   reactStrictMode: true,
 
-  // Optimize production builds
-  swcMinify: true,
-
   // Image optimization
   images: {
     formats: ['image/avif', 'image/webp'],
@@ -15,9 +12,6 @@ const nextConfig = {
 
   // Compression
   compress: true,
-
-  // Optimize fonts
-  optimizeFonts: true,
 
   // Performance optimizations
   experimental: {
