@@ -71,7 +71,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: 'Tools', href: '/admin/tools', icon: Wrench },
     { name: 'Support', href: '/admin/support', icon: MessageSquare },
     { name: 'Billing', href: '/admin/billing', icon: DollarSign },
-    { name: 'Analytics', href: '/admin/analytics', icon: Activity },
+    { name: 'AI Costs', href: '/admin/ai-costs', icon: Activity },
+    { name: 'Analytics', href: '/admin/analytics', icon: FileText },
     { name: 'Audit Logs', href: '/admin/audit-logs', icon: FileText },
     { name: 'System Status', href: '/admin/system-status', icon: Settings },
   ]
