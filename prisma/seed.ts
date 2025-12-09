@@ -380,6 +380,38 @@ Use proper legal writing style with Bluebook citations where applicable.`,
         maxTokens: 8000,
         temperature: 0.7,
       },
+      {
+        name: 'Legal Email Drafter',
+        slug: 'legal-email-drafter',
+        description:
+          'Generate professional legal emails with proper tone, formatting, and disclaimers. Perfect for client communications, opposing counsel, and internal correspondence.',
+        categoryId: draftingCategory.id,
+        inputType: 'text',
+        outputType: 'text',
+        pricingTier: 'free',
+        aiModel: 'gemini-1.5-flash',
+        popular: true,
+        featured: true,
+        promptTemplate: `Draft a professional legal email with the following details:
+
+Purpose: {{purpose}}
+Recipient: {{recipient}}
+Tone: {{tone}}
+Key Points: {{keyPoints}}
+Additional Context: {{context}}
+
+Provide a complete, ready-to-send email with:
+1. Appropriate greeting
+2. Clear subject matter
+3. Well-organized key points
+4. Professional closing
+5. Signature line placeholder
+6. Legal disclaimer if appropriate`,
+        systemPrompt:
+          'You are an expert legal professional assistant specializing in drafting clear, professional legal emails. Your emails are professional, legally precise, and properly formatted.',
+        maxTokens: 2000,
+        temperature: 0.7,
+      },
     ]
 
     for (const tool of tools) {
