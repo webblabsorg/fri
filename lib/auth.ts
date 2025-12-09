@@ -47,13 +47,13 @@ export function validatePasswordStrength(password: string): {
 
 // JWT token generation
 export function generateToken(payload: object, expiresIn: string = '24h'): string {
-  return jwt.sign(payload, NEXTAUTH_SECRET, { expiresIn })
+  return jwt.sign(payload, NEXTAUTH_SECRET, { expiresIn } as jwt.SignOptions)
 }
 
-export function verifyToken(token: string): any {
+export function verifyToken(token: string): jwt.JwtPayload | string | null {
   try {
     return jwt.verify(token, NEXTAUTH_SECRET)
-  } catch (error) {
+  } catch (_error) {
     return null
   }
 }
