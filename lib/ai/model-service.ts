@@ -1,14 +1,27 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
-// Initialize AI clients
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-})
+// Lazy initialization to avoid build-time errors
+let anthropic: Anthropic | null = null
+let googleAI: GoogleGenerativeAI | null = null
 
-const googleAI = new GoogleGenerativeAI(
-  process.env.GOOGLE_AI_API_KEY || ''
-)
+function getAnthropicClient() {
+  if (!anthropic) {
+    anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY || '',
+    })
+  }
+  return anthropic
+}
+
+function getGoogleAIClient() {
+  if (!googleAI) {
+    googleAI = new GoogleGenerativeAI(
+      process.env.GOOGLE_AI_API_KEY || ''
+    )
+  }
+  return googleAI
+}
 
 // Model configurations
 export const MODELS = {
@@ -106,7 +119,8 @@ async function generateAnthropicResponse(options: {
   }))
 
   try {
-    const response = await anthropic.messages.create({
+    const client = getAnthropicClient()
+    const response = await client.messages.create({
       model: modelConfig.model,
       max_tokens: maxTokens,
       temperature,
@@ -152,7 +166,8 @@ async function generateGoogleResponse(options: {
   const { messages, modelConfig, temperature, maxTokens } = options
 
   try {
-    const model = googleAI.getGenerativeModel({
+    const client = getGoogleAIClient()
+    const model = client.getGenerativeModel({
       model: modelConfig.model,
     })
 
