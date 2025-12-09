@@ -45,12 +45,43 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
   const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
   const [useStreaming, setUseStreaming] = useState(true)
+  const [fileLoading, setFileLoading] = useState<Record<string, boolean>>({})
+  const [fileError, setFileError] = useState<Record<string, string>>({})
 
   const canUseTool = checkToolAccess(tool.requiredTier, userTier)
   const aiModel = tool.aiModel[userTier]
 
   const handleInputChange = (name: string, value: any) => {
     setFormData(prev => ({ ...prev, [name]: value }))
+  }
+
+  const handleMultiSelectChange = (name: string, option: string, checked: boolean) => {
+    const currentValues = (formData[name] as string[]) || []
+    const newValues = checked
+      ? [...currentValues, option]
+      : currentValues.filter(v => v !== option)
+    setFormData(prev => ({ ...prev, [name]: newValues }))
+  }
+
+  const handleFileChange = async (name: string, file: File | null) => {
+    if (!file) {
+      setFormData(prev => ({ ...prev, [name]: '' }))
+      setFileError(prev => ({ ...prev, [name]: '' }))
+      return
+    }
+
+    setFileLoading(prev => ({ ...prev, [name]: true }))
+    setFileError(prev => ({ ...prev, [name]: '' }))
+
+    try {
+      const text = await file.text()
+      setFormData(prev => ({ ...prev, [name]: text }))
+    } catch (err) {
+      setFileError(prev => ({ ...prev, [name]: 'Failed to read file' }))
+      console.error('File reading error:', err)
+    } finally {
+      setFileLoading(prev => ({ ...prev, [name]: false }))
+    }
   }
 
   const handleRunTool = async () => {
@@ -372,6 +403,54 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
                         </option>
                       ))}
                     </select>
+                  )}
+
+                  {field.type === 'multiselect' && field.options && (
+                    <div className="mt-2 space-y-2 border rounded-md p-3 max-h-48 overflow-y-auto">
+                      {field.options.map((option) => {
+                        const isChecked = ((formData[field.name] as string[]) || []).includes(option)
+                        return (
+                          <label key={option} className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => handleMultiSelectChange(field.name, option, e.target.checked)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <span className="text-sm text-gray-700">{option}</span>
+                          </label>
+                        )
+                      })}
+                      {((formData[field.name] as string[]) || []).length > 0 && (
+                        <div className="text-xs text-gray-500 mt-2 pt-2 border-t">
+                          {((formData[field.name] as string[]) || []).length} selected
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {field.type === 'file' && (
+                    <div className="mt-2">
+                      <input
+                        type="file"
+                        id={field.name}
+                        accept=".txt,.md,.doc,.docx,text/*"
+                        onChange={(e) => handleFileChange(field.name, e.target.files?.[0] || null)}
+                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                        disabled={fileLoading[field.name]}
+                      />
+                      {fileLoading[field.name] && (
+                        <p className="text-sm text-blue-600 mt-1">Reading file...</p>
+                      )}
+                      {fileError[field.name] && (
+                        <p className="text-sm text-red-600 mt-1">{fileError[field.name]}</p>
+                      )}
+                      {formData[field.name] && !fileLoading[field.name] && !fileError[field.name] && (
+                        <p className="text-sm text-green-600 mt-1">
+                          ✓ File loaded ({(formData[field.name] as string).length} characters)
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   {field.helpText && (
