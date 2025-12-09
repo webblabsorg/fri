@@ -3,6 +3,7 @@ import { getSessionUser } from '@/lib/auth'
 import { buildPrompt } from '@/lib/ai/prompt-builder'
 import { getToolConfig } from '@/lib/tools/tool-configs'
 import { generateAIResponse, normalizeTier, SubscriptionTier, validateAPIKeys } from '@/lib/ai/model-service'
+import { OutputEvaluator } from '@/lib/ai/evaluation'
 import { prisma } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
@@ -130,7 +131,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Save successful tool run to database
+    // Evaluate output quality
+    const evaluation = OutputEvaluator.evaluate(
+      aiResponse.content,
+      JSON.stringify(context),
+      toolConfig.category,
+      toolId
+    )
+
+    // Save successful tool run to database with evaluation
     try {
       const toolRun = await prisma.toolRun.create({
         data: {
@@ -142,6 +151,9 @@ export async function POST(request: NextRequest) {
           aiModelUsed: aiResponse.model,
           tokensUsed: aiResponse.tokensUsed.total,
           cost: aiResponse.cost,
+          evaluationScore: evaluation.score,
+          evaluationData: evaluation as any,
+          evaluatedAt: new Date(),
           completedAt: new Date(),
         },
       })
@@ -155,6 +167,11 @@ export async function POST(request: NextRequest) {
         model: aiResponse.model,
         provider: aiResponse.provider,
         toolName: toolConfig.name,
+        evaluation: {
+          score: evaluation.score,
+          passed: evaluation.passed,
+          threshold: evaluation.threshold,
+        },
       })
     } catch (dbError) {
       console.error('Database error:', dbError)

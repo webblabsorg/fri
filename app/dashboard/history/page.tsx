@@ -14,6 +14,7 @@ interface ToolRun {
   status: string
   aiModelUsed: string
   tokensUsed?: number
+  evaluationScore?: number
   createdAt: string
 }
 
@@ -143,6 +144,22 @@ export default function HistoryPage() {
                   <div className="flex gap-4 text-xs text-gray-500">
                     <span>Model: {run.aiModelUsed}</span>
                     {run.tokensUsed && <span>Tokens: {run.tokensUsed}</span>}
+                    {run.evaluationScore !== undefined && (
+                      <span className="flex items-center gap-1">
+                        Quality:
+                        <span
+                          className={`font-medium ${
+                            run.evaluationScore >= 85
+                              ? 'text-green-600'
+                              : run.evaluationScore >= 70
+                              ? 'text-yellow-600'
+                              : 'text-red-600'
+                          }`}
+                        >
+                          {run.evaluationScore}/100
+                        </span>
+                      </span>
+                    )}
                     <span>{new Date(run.createdAt).toLocaleDateString()}</span>
                   </div>
                 </div>

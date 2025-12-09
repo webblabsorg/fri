@@ -23,6 +23,11 @@ interface ExecutionMetadata {
   tokensUsed: number
   cost: number
   timestamp: Date
+  evaluation?: {
+    score: number
+    passed: boolean
+    threshold: number
+  }
 }
 
 export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
@@ -327,6 +332,27 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
                           <span className="text-blue-700 font-medium">Cost:</span>
                           <span className="ml-2 text-blue-900">${executionMetadata.cost.toFixed(4)}</span>
                         </div>
+                        {executionMetadata.evaluation && (
+                          <div>
+                            <span className="text-blue-700 font-medium">Quality Score:</span>
+                            <span 
+                              className={`ml-2 font-semibold ${
+                                executionMetadata.evaluation.score >= 85 
+                                  ? 'text-green-600' 
+                                  : executionMetadata.evaluation.score >= 70 
+                                  ? 'text-yellow-600' 
+                                  : 'text-red-600'
+                              }`}
+                            >
+                              {executionMetadata.evaluation.score}/100
+                            </span>
+                            {executionMetadata.evaluation.passed ? (
+                              <span className="ml-2 text-xs text-green-600">✓ Passed</span>
+                            ) : (
+                              <span className="ml-2 text-xs text-yellow-600">⚠ Below Threshold</span>
+                            )}
+                          </div>
+                        )}
                         <div className="col-span-2">
                           <span className="text-blue-700 font-medium">Generated:</span>
                           <span className="ml-2 text-blue-900">{executionMetadata.timestamp.toLocaleString()}</span>
