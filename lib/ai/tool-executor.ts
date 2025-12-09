@@ -61,12 +61,13 @@ export async function executeAITool(
       data: {
         userId,
         toolId,
-        input: JSON.stringify(context),
-        output: result.content,
+        inputText: JSON.stringify(context),
+        outputText: result.content,
         tokensUsed: result.tokensUsed.total,
         cost: result.cost,
-        model: result.model,
-        status: 'COMPLETED',
+        aiModelUsed: result.model,
+        status: 'completed',
+        completedAt: new Date(),
       },
     })
 
@@ -87,13 +88,14 @@ export async function executeAITool(
         data: {
           userId: options.userId,
           toolId: options.toolId,
-          input: JSON.stringify(options.context),
-          output: '',
+          inputText: JSON.stringify(options.context),
+          outputText: '',
           tokensUsed: 0,
           cost: 0,
-          model: '',
-          status: 'FAILED',
-          error: error instanceof Error ? error.message : 'Unknown error',
+          aiModelUsed: '',
+          status: 'failed',
+          errorMsg: error instanceof Error ? error.message : 'Unknown error',
+          completedAt: new Date(),
         },
       })
 
@@ -240,7 +242,7 @@ export async function getUserUsageStats(userId: string) {
     where: {
       userId,
       createdAt: { gte: startOfMonth },
-      status: 'COMPLETED',
+      status: 'completed',
     },
     _count: true,
     _sum: {
