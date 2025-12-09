@@ -77,7 +77,7 @@ export function TemplateLibrary({
     }
   }
 
-  const categories = ['all', ...Array.from(new Set(templates.map((t) => t.category).filter(Boolean)))]
+  const categories = ['all', ...Array.from(new Set(templates.map((t) => t.category).filter(Boolean) as string[]))]
   
   const filteredTemplates =
     selectedCategory === 'all'
