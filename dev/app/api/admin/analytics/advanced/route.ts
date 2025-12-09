@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
     const totalUsers = await prisma.user.count()
     const paidUsers = await prisma.user.count({
       where: {
-        subscription_tier: {
+        subscriptionTier: {
           in: ['starter', 'pro', 'advanced'],
         },
       },
@@ -91,16 +91,16 @@ export async function GET(request: NextRequest) {
     const transactions = await prisma.transaction.findMany({
       where: {
         status: 'completed',
-        created_at: {
+        createdAt: {
           gte: startDate,
         },
       },
       select: {
         amount: true,
-        created_at: true,
+        createdAt: true,
         user: {
           select: {
-            subscription_tier: true,
+            subscriptionTier: true,
           },
         },
       },
@@ -114,13 +114,13 @@ export async function GET(request: NextRequest) {
     // Revenue by Tier
     const revenueByTier: Record<string, number> = {}
     transactions.forEach((t) => {
-      const tier = t.user.subscription_tier || 'free'
+      const tier = t.user.subscriptionTier || 'free'
       revenueByTier[tier] = (revenueByTier[tier] || 0) + t.amount
     })
 
     // Tool Usage Distribution
     const toolUsage = await prisma.toolRun.groupBy({
-      by: ['tool_slug'],
+      by: ['toolSlug'],
       where: {
         createdAt: {
           gte: startDate,
@@ -153,7 +153,7 @@ export async function GET(request: NextRequest) {
     const canceledSubscriptions = await prisma.transaction.count({
       where: {
         status: 'refunded',
-        created_at: {
+        createdAt: {
           gte: startDate,
         },
       },
@@ -217,7 +217,7 @@ export async function GET(request: NextRequest) {
         avgRunsPerUser: Math.round(avgRunsPerUser * 100) / 100,
         activeUsers: engagementData.length,
         toolUsage: toolUsage.map((t) => ({
-          tool: t.tool_slug,
+          tool: t.toolSlug,
           runs: t._count.id,
         })),
       },
