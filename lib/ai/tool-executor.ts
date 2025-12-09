@@ -1,6 +1,10 @@
 import { generateAIResponse, AIGenerateOptions, AIGenerateResult, SubscriptionTier, normalizeTier } from './model-service'
-import { buildLegalPrompt, LegalPromptType, PromptContext } from './prompt-builder'
+import { buildPrompt, LegalPromptType } from './prompt-builder'
 import { prisma } from '../db'
+
+interface PromptContext {
+  [key: string]: any
+}
 
 export interface ToolExecutionOptions {
   toolType: LegalPromptType
@@ -48,7 +52,11 @@ export async function executeAITool(
     }
 
     // Build prompt from template and context
-    const messages = buildLegalPrompt(toolType, context)
+    const prompts = buildPrompt(toolType, context)
+    const messages = [
+      { role: 'system' as const, content: prompts.system },
+      { role: 'user' as const, content: prompts.user },
+    ]
 
     // Generate AI response
     const result = await generateAIResponse({
