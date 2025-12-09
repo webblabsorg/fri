@@ -47,7 +47,7 @@ export async function PATCH(request: NextRequest) {
       data: {
         name,
         firmName: firmName || null,
-        role: role || null,
+        ...(role && { role }),
         updatedAt: new Date(),
       },
       select: {
