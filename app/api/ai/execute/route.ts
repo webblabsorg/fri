@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { buildPrompt } from '@/lib/ai/prompt-builder'
 import { getToolConfig } from '@/lib/tools/tool-configs'
+import { generateAIResponse, normalizeTier, SubscriptionTier, validateAPIKeys } from '@/lib/ai/model-service'
 import { prisma } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
@@ -64,32 +65,83 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get AI model for user's tier
-    const aiModel = toolConfig.aiModel[userTier]
+    // Validate API keys are configured
+    const apiKeys = validateAPIKeys()
+    if (!apiKeys.anthropic && !apiKeys.google) {
+      return NextResponse.json(
+        { error: 'AI service not configured. Please contact support.' },
+        { status: 503 }
+      )
+    }
 
     // Build prompts using the prompt builder
     const prompts = buildPrompt(mapToolToPromptType(toolId), context)
 
-    // For now, return a simulated response (will integrate with actual AI in next step)
-    // TODO: Integrate with Anthropic Claude and Google Gemini APIs
-    const mockResponse = {
-      content: `[AI Response from ${aiModel}]\n\nThis is a simulated response for ${toolConfig.name}.\n\nSystem Prompt: ${prompts.system.substring(0, 100)}...\n\nUser Request: ${prompts.user.substring(0, 200)}...\n\n[In production, this would be the actual AI-generated content]`,
-      tokensUsed: 150,
-      cost: 0.001,
+    // Prepare messages for AI
+    const messages = [
+      { role: 'system' as const, content: prompts.system },
+      { role: 'user' as const, content: prompts.user },
+    ]
+
+    // Normalize tier for model service
+    const normalizedTier = normalizeTier(userTier.toUpperCase())
+
+    // Get AI model name for display
+    const aiModelDisplay = toolConfig.aiModel[userTier]
+
+    // Generate AI response
+    let aiResponse
+    try {
+      aiResponse = await generateAIResponse({
+        messages,
+        tier: normalizedTier,
+        temperature: 0.7,
+        userId: user.id,
+        toolId: toolId,
+      })
+    } catch (aiError) {
+      console.error('AI generation error:', aiError)
+      
+      // Save failed run to database
+      try {
+        await prisma.toolRun.create({
+          data: {
+            userId: user.id,
+            toolId: toolId,
+            inputText: JSON.stringify(context),
+            outputText: '',
+            status: 'failed',
+            aiModelUsed: aiModelDisplay,
+            tokensUsed: 0,
+            cost: 0,
+            completedAt: new Date(),
+          },
+        })
+      } catch (dbError) {
+        console.error('Database error logging failure:', dbError)
+      }
+
+      return NextResponse.json(
+        { 
+          error: 'Failed to generate AI response. Please try again.',
+          details: aiError instanceof Error ? aiError.message : 'Unknown error'
+        },
+        { status: 500 }
+      )
     }
 
-    // Save tool run to database
+    // Save successful tool run to database
     try {
       const toolRun = await prisma.toolRun.create({
         data: {
           userId: user.id,
           toolId: toolId,
           inputText: JSON.stringify(context),
-          outputText: mockResponse.content,
+          outputText: aiResponse.content,
           status: 'completed',
-          aiModelUsed: aiModel,
-          tokensUsed: mockResponse.tokensUsed,
-          cost: mockResponse.cost,
+          aiModelUsed: aiResponse.model,
+          tokensUsed: aiResponse.tokensUsed.total,
+          cost: aiResponse.cost,
           completedAt: new Date(),
         },
       })
@@ -97,22 +149,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         executionId: toolRun.id,
-        content: mockResponse.content,
-        tokensUsed: mockResponse.tokensUsed,
-        cost: mockResponse.cost,
-        model: aiModel,
+        content: aiResponse.content,
+        tokensUsed: aiResponse.tokensUsed.total,
+        cost: aiResponse.cost,
+        model: aiResponse.model,
+        provider: aiResponse.provider,
         toolName: toolConfig.name,
       })
     } catch (dbError) {
       console.error('Database error:', dbError)
-      // Return response even if DB save fails
+      
+      // Return AI response even if DB save fails
       return NextResponse.json({
         success: true,
-        content: mockResponse.content,
-        tokensUsed: mockResponse.tokensUsed,
-        cost: mockResponse.cost,
-        model: aiModel,
+        content: aiResponse.content,
+        tokensUsed: aiResponse.tokensUsed.total,
+        cost: aiResponse.cost,
+        model: aiResponse.model,
+        provider: aiResponse.provider,
         toolName: toolConfig.name,
+        warning: 'Response generated but not saved to history',
       })
     }
   } catch (error) {
