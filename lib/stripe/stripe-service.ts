@@ -289,9 +289,13 @@ export async function handleSuccessfulPayment(
       stripePaymentId: subscription.latest_invoice as string,
       amount,
       currency: subscription.currency.toUpperCase(),
-      status: 'succeeded',
+      status: 'completed',
       type: 'subscription',
-      description: `${tier.toUpperCase()} subscription payment`,
+      metadata: {
+        tier,
+        planName: tier.toUpperCase(),
+        subscriptionId: subscription.id,
+      },
     },
   })
 }
