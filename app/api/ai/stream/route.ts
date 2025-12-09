@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
             }
             const anthropic = new Anthropic({ apiKey: anthropicApiKey })
             const modelName =
-              normalizedTier === 'ADVANCED' || normalizedTier === 'PRO'
+              normalizedTier === 'ENTERPRISE' || normalizedTier === 'PROFESSIONAL'
                 ? 'claude-sonnet-4-20250514'
                 : 'claude-3-5-haiku-20241022'
 
