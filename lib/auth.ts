@@ -50,10 +50,19 @@ export function generateToken(payload: object, expiresIn: string = '24h'): strin
   return jwt.sign(payload, NEXTAUTH_SECRET, { expiresIn } as jwt.SignOptions)
 }
 
-export function verifyToken(token: string): jwt.JwtPayload | string | null {
+interface CustomJwtPayload extends jwt.JwtPayload {
+  userId?: string
+  type?: string
+}
+
+export function verifyToken(token: string): CustomJwtPayload | null {
   try {
-    return jwt.verify(token, NEXTAUTH_SECRET)
-  } catch (_error) {
+    const decoded = jwt.verify(token, NEXTAUTH_SECRET)
+    if (typeof decoded === 'string') {
+      return null
+    }
+    return decoded as CustomJwtPayload
+  } catch {
     return null
   }
 }
