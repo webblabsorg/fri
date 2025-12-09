@@ -64,7 +64,7 @@ export async function PATCH(
     // Verify the project belongs to the user
     const project = await prisma.project.findUnique({
       where: { id: projectId },
-      select: { userId: true },
+      select: { createdBy: true },
     })
 
     if (!project) {
@@ -74,7 +74,7 @@ export async function PATCH(
       )
     }
 
-    if (project.userId !== user.id) {
+    if (project.createdBy !== user.id) {
       return NextResponse.json(
         { error: 'Unauthorized access to project' },
         { status: 403 }
