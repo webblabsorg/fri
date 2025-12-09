@@ -101,6 +101,22 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
+    // Validate: prevent non-super-admins from modifying super-admin users
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      select: { role: true },
+    })
+
+    if (
+      targetUser?.role === 'super_admin' &&
+      adminUser.role !== 'super_admin'
+    ) {
+      return NextResponse.json(
+        { error: 'Only super admins can modify super admin accounts' },
+        { status: 403 }
+      )
+    }
+
     // Update user
     const updatedUser = await prisma.user.update({
       where: { id },
@@ -128,6 +144,76 @@ export async function PATCH(
     console.error('Admin user update error:', error)
     return NextResponse.json(
       { error: 'Failed to update user' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const sessionToken = request.cookies.get('session')?.value
+
+    if (!sessionToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const adminUser = await getSessionUser(sessionToken)
+    if (!adminUser || !isAdmin(adminUser.role)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
+
+    const { id } = await params
+
+    // Prevent self-deletion
+    if (id === adminUser.id) {
+      return NextResponse.json(
+        { error: 'Cannot delete your own account' },
+        { status: 400 }
+      )
+    }
+
+    // Validate: prevent non-super-admins from deleting super-admin users
+    const targetUser = await prisma.user.findUnique({
+      where: { id },
+      select: { role: true, email: true },
+    })
+
+    if (!targetUser) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    }
+
+    if (
+      targetUser.role === 'super_admin' &&
+      adminUser.role !== 'super_admin'
+    ) {
+      return NextResponse.json(
+        { error: 'Only super admins can delete super admin accounts' },
+        { status: 403 }
+      )
+    }
+
+    // Soft delete: set status to 'deleted'
+    await prisma.user.update({
+      where: { id },
+      data: {
+        status: 'deleted',
+        email: `deleted_${id}@deleted.local`, // Prevent email conflicts
+      },
+    })
+
+    // Log admin action
+    await logAdminAction(adminUser.id, 'delete_user', 'user', id, {
+      deletedEmail: targetUser.email,
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Admin user delete error:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete user' },
       { status: 500 }
     )
   }
