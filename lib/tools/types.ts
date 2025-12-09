@@ -22,6 +22,7 @@ export interface ToolConfig {
   relatedTools: string[]
   useCases: string[]
   icon: string
+  tags?: string[]
 }
 
 export interface InputField {
