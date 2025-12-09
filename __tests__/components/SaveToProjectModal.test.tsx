@@ -14,7 +14,7 @@ describe('SaveToProjectModal', () => {
     jest.clearAllMocks()
     ;(global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
-      json: async () => ({ projects: [] }),
+      json: async () => [],
     })
   })
 
@@ -51,7 +51,7 @@ describe('SaveToProjectModal', () => {
     ]
     ;(global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
-      json: async () => ({ projects: mockProjects }),
+      json: async () => mockProjects,
     })
 
     render(
@@ -69,6 +69,11 @@ describe('SaveToProjectModal', () => {
   })
 
   it('should allow creating new project', async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => [],
+    })
+
     render(
       <SaveToProjectModal
         isOpen={true}
@@ -78,11 +83,18 @@ describe('SaveToProjectModal', () => {
       />
     )
 
+    // Wait for projects to load
+    await waitFor(() => {
+      expect(screen.queryByText(/Loading projects/i)).not.toBeInTheDocument()
+    })
+
     const createButton = screen.getByText(/Create New Project/i)
     fireEvent.click(createButton)
 
-    const nameInput = screen.getByPlaceholderText(/Project name/i)
-    expect(nameInput).toBeInTheDocument()
+    await waitFor(() => {
+      const nameInput = screen.getByPlaceholderText(/Enter project name/i)
+      expect(nameInput).toBeInTheDocument()
+    })
   })
 
   it('should call onClose when cancel is clicked', () => {
@@ -103,15 +115,12 @@ describe('SaveToProjectModal', () => {
 
   it('should save to existing project', async () => {
     const mockProjects = [{ id: 'proj-1', name: 'Project 1' }]
-    ;(global.fetch as jest.Mock)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ projects: mockProjects }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ success: true }),
-      })
+    ;(global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => mockProjects,
+    })
+
+    mockOnSave.mockResolvedValue(undefined)
 
     render(
       <SaveToProjectModal
@@ -126,14 +135,14 @@ describe('SaveToProjectModal', () => {
       expect(screen.getByText('Project 1')).toBeInTheDocument()
     })
 
-    const projectOption = screen.getByText('Project 1')
-    fireEvent.click(projectOption)
+    const projectSelect = screen.getByRole('combobox')
+    fireEvent.change(projectSelect, { target: { value: 'proj-1' } })
 
-    const saveButton = screen.getByText(/^Save$/i)
+    const saveButton = screen.getByText(/Save to Selected Project/i)
     fireEvent.click(saveButton)
 
     await waitFor(() => {
-      expect(mockOnSave).toHaveBeenCalled()
+      expect(mockOnSave).toHaveBeenCalledWith('proj-1')
     })
   })
 })

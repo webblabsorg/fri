@@ -54,13 +54,16 @@ describe('Prompt Builder', () => {
 
   it('should include context values in user prompt', () => {
     const context = {
-      customField: 'custom value',
-      anotherField: 123,
+      issue: 'Custom legal issue with specific terms',
+      facts: 'Relevant facts about the custom case',
+      jurisdiction: 'California',
     }
 
     const result = buildPrompt('LEGAL_MEMO_WRITER', context)
 
-    // User prompt should contain stringified context
-    expect(result.user).toContain('custom')
+    // User prompt should contain the provided context values
+    expect(result.user).toContain('Custom legal issue')
+    expect(result.user).toContain('Relevant facts')
+    expect(result.user).toContain('California')
   })
 })
