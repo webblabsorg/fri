@@ -3,7 +3,7 @@ import { AIMessage } from './model-service'
 export interface PromptTemplate {
   system: string
   userTemplate: string
-  variables: string[]
+  variables: readonly string[]
 }
 
 export interface PromptContext {
