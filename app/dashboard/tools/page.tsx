@@ -44,7 +44,7 @@ export default function ToolsPage() {
       const response = await fetch('/api/favorites')
       if (response.ok) {
         const data = await response.json()
-        const favoriteIds = new Set(data.favorites.map((fav: any) => fav.toolId))
+        const favoriteIds = new Set<string>(data.favorites.map((fav: any) => fav.toolId as string))
         setFavoritedToolIds(favoriteIds)
       }
     } catch (error) {
