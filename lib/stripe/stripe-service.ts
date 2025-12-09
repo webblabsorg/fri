@@ -389,12 +389,13 @@ export async function getUpcomingInvoice(userId: string) {
   }
 
   try {
-    const invoice = await stripe.invoices.upcoming({
+    // Use any type for Stripe SDK compatibility
+    const invoice = await (stripe.invoices as any).retrieveUpcoming({
       customer: user.stripeCustomerId,
     })
     return invoice
-  } catch (_error) {
-    // No upcoming invoice
+  } catch {
+    // No upcoming invoice or customer has no subscription
     return null
   }
 }
