@@ -218,32 +218,32 @@ export async function updateSubscription(
     throw new Error('Invalid pricing tier')
   }
 
-  // Cancel current subscription and create new one
-  // (Stripe doesn't allow updating price_data, so we recreate)
-  await stripe.subscriptions.cancel(subscriptionId)
+  // For subscriptions, we need to create a product first, then update
+  // This is a simplified version - in production, you'd want to cache products
+  const product = await stripe.products.create({
+    name: `Frith AI ${plan.name} Plan`,
+    description: plan.description,
+    metadata: {
+      tier: newTier.toLowerCase(),
+    },
+  })
 
-  const customerId = subscription.customer as string
+  const price = await stripe.prices.create({
+    product: product.id,
+    currency: 'usd',
+    unit_amount: plan.price * 100,
+    recurring: {
+      interval: plan.interval || 'month',
+      interval_count: 1,
+    },
+  })
 
-  const newSubscription = await stripe.subscriptions.create({
-    customer: customerId,
+  // Update the subscription to use the new price
+  return await stripe.subscriptions.update(subscriptionId, {
     items: [
       {
-        price_data: {
-          currency: 'usd',
-          unit_amount: plan.price * 100,
-          recurring: {
-            interval: plan.interval || 'month',
-            interval_count: 1,
-          },
-          product_data: {
-            name: `Frith AI ${plan.name} Plan`,
-            description: plan.description,
-            metadata: {
-              tier: newTier.toLowerCase(),
-              plan_name: plan.name,
-            },
-          },
-        },
+        id: subscription.items.data[0].id,
+        price: price.id,
       },
     ],
     metadata: {
@@ -251,8 +251,6 @@ export async function updateSubscription(
     },
     proration_behavior: 'create_prorations',
   })
-
-  return newSubscription
 }
 
 // Handle successful payment (webhook) - reads tier from metadata
