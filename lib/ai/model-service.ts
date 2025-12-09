@@ -1,12 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+// Use dynamic imports to avoid build-time initialization
+let anthropic: any = null
+let googleAI: any = null
 
-// Lazy initialization to avoid build-time errors
-let anthropic: Anthropic | null = null
-let googleAI: GoogleGenerativeAI | null = null
-
-function getAnthropicClient() {
+async function getAnthropicClient() {
   if (!anthropic) {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
     anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY || '',
     })
@@ -14,8 +12,9 @@ function getAnthropicClient() {
   return anthropic
 }
 
-function getGoogleAIClient() {
+async function getGoogleAIClient() {
   if (!googleAI) {
+    const { GoogleGenerativeAI } = await import('@google/generative-ai')
     googleAI = new GoogleGenerativeAI(
       process.env.GOOGLE_AI_API_KEY || ''
     )
@@ -119,7 +118,7 @@ async function generateAnthropicResponse(options: {
   }))
 
   try {
-    const client = getAnthropicClient()
+    const client = await getAnthropicClient()
     const response = await client.messages.create({
       model: modelConfig.model,
       max_tokens: maxTokens,
@@ -166,7 +165,7 @@ async function generateGoogleResponse(options: {
   const { messages, modelConfig, temperature, maxTokens } = options
 
   try {
-    const client = getGoogleAIClient()
+    const client = await getGoogleAIClient()
     const model = client.getGenerativeModel({
       model: modelConfig.model,
     })
