@@ -43,6 +43,8 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
   const [copySuccess, setCopySuccess] = useState(false)
   const [isSaveTemplateModalOpen, setIsSaveTemplateModalOpen] = useState(false)
   const [isTemplateLibraryOpen, setIsTemplateLibraryOpen] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
+  const [useStreaming, setUseStreaming] = useState(true)
 
   const canUseTool = checkToolAccess(tool.requiredTier, userTier)
   const aiModel = tool.aiModel[userTier]
@@ -52,6 +54,88 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
   }
 
   const handleRunTool = async () => {
+    if (useStreaming) {
+      await handleRunToolStreaming()
+    } else {
+      await handleRunToolNonStreaming()
+    }
+  }
+
+  const handleRunToolStreaming = async () => {
+    setIsRunning(true)
+    setIsStreaming(true)
+    setOutput('')
+    setError(null)
+    setExecutionMetadata(null)
+
+    try {
+      const response = await fetch('/api/ai/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          toolId: tool.id,
+          context: formData,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to start streaming')
+      }
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+
+      if (!reader) throw new Error('No reader available')
+
+      let fullOutput = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        const lines = chunk.split('\n')
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.content) {
+                fullOutput += data.content
+                setOutput(fullOutput)
+              }
+
+              if (data.done) {
+                if (data.error) {
+                  setError(data.error)
+                } else if (data.executionId) {
+                  setExecutionMetadata({
+                    executionId: data.executionId,
+                    model: aiModel,
+                    provider: 'streaming',
+                    tokensUsed: Math.ceil(fullOutput.length / 4),
+                    cost: 0.001,
+                    timestamp: new Date(),
+                    evaluation: data.evaluation,
+                  })
+                }
+              }
+            } catch (e) {
+              // Skip invalid JSON
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Streaming error occurred')
+    } finally {
+      setIsRunning(false)
+      setIsStreaming(false)
+    }
+  }
+
+  const handleRunToolNonStreaming = async () => {
     setIsRunning(true)
     setError(null)
     setOutput(null)
@@ -84,6 +168,7 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
           tokensUsed: data.tokensUsed || 0,
           cost: data.cost || 0,
           timestamp: new Date(),
+          evaluation: data.evaluation,
         })
       }
     } catch (err: any) {
@@ -295,6 +380,20 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
                 </div>
               ))}
 
+              {/* Streaming Toggle */}
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="checkbox"
+                  id="streaming-toggle"
+                  checked={useStreaming}
+                  onChange={(e) => setUseStreaming(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="streaming-toggle" className="text-sm text-gray-600">
+                  Enable streaming (see results in real-time)
+                </label>
+              </div>
+
               <div className="flex gap-3">
                 <Button
                   variant="outline"
@@ -310,7 +409,7 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
                   className="flex-1"
                   size="lg"
                 >
-                  {isRunning ? 'Running Tool...' : `Run ${tool.name}`}
+                  {isRunning && isStreaming ? '⚡ Streaming...' : isRunning ? 'Running...' : `Run ${tool.name}`}
                 </Button>
               </div>
             </div>
