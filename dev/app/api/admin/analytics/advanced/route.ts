@@ -1,14 +1,20 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { isAdmin } from '@/lib/admin'
+import { getSessionUser } from '@/lib/auth'
 
-export async function GET(request: Request) {
-  const adminCheck = await isAdmin()
-  if (!adminCheck.isAdmin) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
-
+export async function GET(request: NextRequest) {
   try {
+    const sessionToken = request.cookies.get('session')?.value
+
+    if (!sessionToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const adminUser = await getSessionUser(sessionToken)
+    if (!adminUser || !isAdmin(adminUser.role)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
     const { searchParams } = new URL(request.url)
     const days = parseInt(searchParams.get('days') || '30')
     
