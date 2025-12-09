@@ -1,5 +1,7 @@
 import { notFound } from 'next/navigation'
+import { cookies } from 'next/headers'
 import { getToolConfig } from '@/lib/tools/tool-configs'
+import { getSessionUser } from '@/lib/auth'
 import { ToolDetailPage } from '@/components/tools/ToolDetailPage'
 
 interface PageProps {
@@ -16,7 +18,19 @@ export default async function ToolPage({ params }: PageProps) {
     notFound()
   }
 
-  return <ToolDetailPage tool={toolConfig} userTier="free" />
+  // Get user session to determine tier
+  const cookieStore = await cookies()
+  const sessionToken = cookieStore.get('session')?.value
+  let userTier: 'free' | 'starter' | 'pro' | 'advanced' = 'free'
+
+  if (sessionToken) {
+    const user = await getSessionUser(sessionToken)
+    if (user) {
+      userTier = user.subscriptionTier as 'free' | 'starter' | 'pro' | 'advanced'
+    }
+  }
+
+  return <ToolDetailPage tool={toolConfig} userTier={userTier} />
 }
 
 // Generate metadata for SEO
