@@ -98,11 +98,7 @@ export async function GET(request: NextRequest) {
       select: {
         amount: true,
         createdAt: true,
-        user: {
-          select: {
-            subscriptionTier: true,
-          },
-        },
+        userId: true,
       },
     })
 
@@ -111,10 +107,23 @@ export async function GET(request: NextRequest) {
     const arr = mrr * 12
     const arpu = paidUsers > 0 ? totalRevenue / paidUsers : 0
 
+    // Get user data for revenue by tier
+    const userIds = [...new Set(transactions.map(t => t.userId))]
+    const users = await prisma.user.findMany({
+      where: {
+        id: { in: userIds },
+      },
+      select: {
+        id: true,
+        subscriptionTier: true,
+      },
+    })
+    const userTierMap = new Map(users.map(u => [u.id, u.subscriptionTier || 'free']))
+
     // Revenue by Tier
     const revenueByTier: Record<string, number> = {}
     transactions.forEach((t) => {
-      const tier = t.user.subscriptionTier || 'free'
+      const tier = userTierMap.get(t.userId) || 'free'
       revenueByTier[tier] = (revenueByTier[tier] || 0) + t.amount
     })
 
