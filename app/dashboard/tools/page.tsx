@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { getAllToolConfigs, getToolsByCategory, getToolsByTier } from '@/lib/tools/tool-configs'
+import { FavoriteButton } from '@/components/tools/FavoriteButton'
 import { Zap, Star } from 'lucide-react'
 
 const CATEGORIES = [
@@ -30,6 +31,26 @@ export default function ToolsPage() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedTier, setSelectedTier] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [favoritedToolIds, setFavoritedToolIds] = useState<Set<string>>(new Set())
+
+  // Fetch user's favorites on mount
+  useEffect(() => {
+    fetchFavorites()
+  }, [])
+
+  const fetchFavorites = async () => {
+    try {
+      const response = await fetch('/api/favorites')
+      if (response.ok) {
+        const data = await response.json()
+        const favoriteIds = new Set(data.favorites.map((fav: any) => fav.toolId))
+        setFavoritedToolIds(favoriteIds)
+      }
+    } catch (error) {
+      console.error('Failed to fetch favorites:', error)
+    }
+  }
 
   // Get tools based on filters
   let tools = getAllToolConfigs()
@@ -50,6 +71,11 @@ export default function ToolsPage() {
       tool.description.toLowerCase().includes(query) ||
       tool.category.toLowerCase().includes(query)
     )
+  }
+
+  // Filter by favorites
+  if (showFavoritesOnly) {
+    tools = tools.filter(tool => favoritedToolIds.has(tool.id))
   }
 
   const getTierBadgeColor = (tier: string) => {
@@ -87,6 +113,20 @@ export default function ToolsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-gray-900 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400"
           />
+        </div>
+
+        {/* Favorites Toggle */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showFavoritesOnly
+                ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {showFavoritesOnly ? '❤️ Showing Favorites Only' : '🤍 Show Favorites Only'}
+          </button>
         </div>
 
         {/* Filters */}
@@ -145,15 +185,20 @@ export default function ToolsPage() {
               href={`/dashboard/tools/${tool.id}`}
               className="group relative rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:border-blue-500 hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
             >
-              {/* WOW Badge */}
-              {tool.tags?.includes('wow') && (
-                <div className="absolute right-4 top-4">
+              {/* Favorite Button & WOW Badge */}
+              <div className="absolute right-4 top-4 flex items-center gap-2">
+                <FavoriteButton 
+                  toolId={tool.id} 
+                  initialIsFavorited={favoritedToolIds.has(tool.id)}
+                  size="sm"
+                />
+                {tool.tags?.includes('wow') && (
                   <span className="flex items-center gap-1 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-2 py-1 text-xs font-bold text-white shadow-lg">
                     <Star className="h-3 w-3 fill-white" />
                     WOW
                   </span>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Tool Header */}
               <div className="mb-3">
@@ -203,6 +248,7 @@ export default function ToolsPage() {
                 setSelectedCategory('all')
                 setSelectedTier('all')
                 setSearchQuery('')
+                setShowFavoritesOnly(false)
               }}
               className="mt-4 text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
             >
