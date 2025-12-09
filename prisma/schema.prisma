@@ -1,0 +1,409 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// AUTHENTICATION & USER MANAGEMENT
+// ============================================================================
+
+model User {
+  id                  String    @id @default(uuid())
+  name                String
+  email               String    @unique
+  emailVerified       Boolean   @default(false)
+  passwordHash        String
+  firmName            String?
+  role                String    @default("user") // user, admin, superadmin
+  subscriptionTier    String    @default("free") // free, pro, professional, enterprise
+  subscriptionStatus  String    @default("active") // active, cancelled, past_due
+  stripeCustomerId    String?   @unique
+  twoFactorEnabled    Boolean   @default(false)
+  twoFactorSecret     String?
+  status              String    @default("pending_verification") // pending_verification, active, suspended, deleted
+  marketingOptIn      Boolean   @default(false)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  lastLoginAt         DateTime?
+
+  // Relations
+  sessions              Session[]
+  toolRuns              ToolRun[]
+  projects              Project[]
+  tickets               SupportTicket[]
+  auditLogs             AuditLog[]
+  organizationMembers   OrganizationMember[]
+  workspaceMembers      WorkspaceMember[]
+  favorites             Favorite[]
+  chatbotConversations  ChatbotConversation[]
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  userId       String
+  sessionToken String   @unique
+  ipAddress    String?
+  userAgent    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailVerification {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([token])
+}
+
+// ============================================================================
+// MULTI-TENANT ORGANIZATION MANAGEMENT
+// ============================================================================
+
+model Organization {
+  id                   String   @id @default(uuid())
+  name                 String
+  type                 String?  // law_firm, corporate, solo, consultant
+  planTier             String   @default("free") // free, pro, professional, enterprise
+  subscriptionStatus   String   @default("active") // active, trialing, past_due, cancelled
+  seatsTotal           Int      @default(1)
+  seatsUsed            Int      @default(0)
+  stripeSubscriptionId String?  @unique
+  billingEmail         String?
+  status               String   @default("active") // active, suspended, deleted
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  // Relations
+  members    OrganizationMember[]
+  workspaces Workspace[]
+  projects   Project[]
+
+  @@index([status])
+}
+
+model OrganizationMember {
+  id             String    @id @default(uuid())
+  organizationId String
+  userId         String
+  role           String    @default("member") // owner, admin, member, viewer
+  invitedBy      String?
+  invitedAt      DateTime?
+  joinedAt       DateTime?
+  status         String    @default("active") // pending, active, suspended
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Workspace {
+  id             String   @id @default(uuid())
+  organizationId String?
+  name           String
+  type           String   @default("personal") // personal, team
+  ownerId        String
+  status         String   @default("active") // active, archived
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization?     @relation(fields: [organizationId], references: [id])
+  members      WorkspaceMember[]
+  projects     Project[]
+
+  @@index([organizationId])
+  @@index([ownerId])
+}
+
+model WorkspaceMember {
+  id          String   @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        String   @default("member") // admin, member, viewer
+  permissions Json?    // Granular permissions for future use
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+// ============================================================================
+// TOOL CATALOG & EXECUTION
+// ============================================================================
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  icon        String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  tools Tool[]
+
+  @@index([slug])
+}
+
+model Tool {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String   @unique
+  description    String   @db.Text
+  categoryId     String
+  inputType      String   // text, document, structured
+  outputType     String   // text, document, json
+  pricingTier    String   // free, pro, professional, enterprise
+  aiModel        String   @default("claude-sonnet-4.5")
+  popular        Boolean  @default(false)
+  featured       Boolean  @default(false)
+  status         String   @default("active") // active, beta, deprecated
+  promptTemplate String   @db.Text
+  systemPrompt   String?  @db.Text
+  maxTokens      Int      @default(4000)
+  temperature    Float    @default(0.7)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  category Category  @relation(fields: [categoryId], references: [id])
+  runs     ToolRun[]
+
+  @@index([categoryId])
+  @@index([slug])
+  @@index([pricingTier])
+  @@index([popular])
+}
+
+model ToolRun {
+  id          String    @id @default(uuid())
+  userId      String
+  toolId      String
+  projectId   String?
+  inputText   String    @db.Text
+  outputText  String?   @db.Text
+  status      String    @default("pending") // pending, processing, completed, failed
+  aiModelUsed String
+  tokensUsed  Int?
+  cost        Float?
+  runTimeMs   Int?
+  errorMsg    String?   @db.Text
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  user    User     @relation(fields: [userId], references: [id])
+  tool    Tool     @relation(fields: [toolId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id])
+
+  @@index([userId])
+  @@index([toolId])
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String
+  toolId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, toolId])
+  @@index([userId])
+}
+
+// ============================================================================
+// PROJECT MANAGEMENT
+// ============================================================================
+
+model Project {
+  id             String   @id @default(uuid())
+  organizationId String?
+  workspaceId    String?
+  name           String
+  description    String?  @db.Text
+  status         String   @default("active") // active, completed, archived
+  privacy        String   @default("private") // private, team, public
+  createdBy      String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  workspace    Workspace?    @relation(fields: [workspaceId], references: [id])
+  creator      User          @relation(fields: [createdBy], references: [id])
+  runs         ToolRun[]
+
+  @@index([organizationId])
+  @@index([workspaceId])
+  @@index([createdBy])
+  @@index([status])
+}
+
+// ============================================================================
+// SUPPORT SYSTEM
+// ============================================================================
+
+model SupportTicket {
+  id           String    @id @default(uuid())
+  ticketNumber String    @unique
+  userId       String
+  subject      String
+  category     String // account, billing, technical, tool_feedback, feature_request
+  priority     String    @default("medium") // low, medium, high, urgent
+  status       String    @default("open") // open, in_progress, waiting_on_customer, resolved, closed
+  assignedTo   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  resolvedAt   DateTime?
+
+  user     User            @relation(fields: [userId], references: [id])
+  messages TicketMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([ticketNumber])
+}
+
+model TicketMessage {
+  id         String   @id @default(uuid())
+  ticketId   String
+  senderId   String
+  senderType String   // user, admin, system
+  message    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+// ============================================================================
+// AI CHATBOT
+// ============================================================================
+
+model ChatbotConversation {
+  id          String   @id @default(uuid())
+  userId      String?
+  visitorId   String? // For anonymous visitors
+  email       String?
+  name        String?
+  phone       String?
+  status      String   @default("active") // active, converted, closed
+  source      String   @default("website") // website, dashboard
+  leadCaptured Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User?            @relation(fields: [userId], references: [id])
+  messages ChatbotMessage[]
+
+  @@index([userId])
+  @@index([visitorId])
+  @@index([status])
+}
+
+model ChatbotMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String   // user, assistant, system
+  message        String   @db.Text
+  metadata       Json?    // Store additional context
+  createdAt      DateTime @default(now())
+
+  conversation ChatbotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+}
+
+// ============================================================================
+// AUDIT LOGS & ANALYTICS
+// ============================================================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  eventType  String   // login, logout, tool_run, subscription_change, etc.
+  eventData  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// BILLING & SUBSCRIPTIONS
+// ============================================================================
+
+model Transaction {
+  id                String   @id @default(uuid())
+  userId            String
+  organizationId    String?
+  amount            Float
+  currency          String   @default("USD")
+  status            String   // pending, completed, failed, refunded
+  type              String   // subscription, one_time
+  stripePaymentId   String?  @unique
+  paypalTransactionId String? @unique
+  metadata          Json?
+  createdAt         DateTime @default(now())
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model Refund {
+  id            String   @id @default(uuid())
+  transactionId String
+  userId        String
+  amount        Float
+  reason        String?  @db.Text
+  status        String   @default("pending") // pending, approved, rejected, processed
+  requestedAt   DateTime @default(now())
+  processedAt   DateTime?
+
+  @@index([userId])
+  @@index([transactionId])
+  @@index([status])
+}
