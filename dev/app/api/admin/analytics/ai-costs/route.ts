@@ -174,13 +174,17 @@ export async function GET(request: NextRequest) {
           days,
         },
       },
-      costByModel: Object.entries(costByModel).map(([model, data]) => ({
+      costByModel: Object.entries(costByModel).map(([model, data]: [string, any]) => ({
         model,
-        ...data,
+        cost: data.cost,
+        tokens: data.tokens,
+        runs: data.runs,
       })),
-      costByTier: Object.entries(costByTier).map(([tier, data]) => ({
+      costByTier: Object.entries(costByTier).map(([tier, data]: [string, any]) => ({
         tier,
-        ...data,
+        cost: data.cost,
+        tokens: data.tokens,
+        runs: data.runs,
       })),
       costByTool: Object.values(costByTool)
         .sort((a: any, b: any) => b.cost - a.cost)
