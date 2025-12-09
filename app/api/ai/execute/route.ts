@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     // Look up tool by slug (toolId is actually a slug from the client)
     const tool = await prisma.tool.findUnique({
       where: { slug: toolId },
-      select: { id: true, name: true, isActive: true },
+      select: { id: true, name: true, status: true },
     })
 
     if (!tool) {
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!tool.isActive) {
+    if (tool.status !== 'active') {
       return NextResponse.json(
         { error: `Tool is currently unavailable: ${tool.name}` },
         { status: 403 }
