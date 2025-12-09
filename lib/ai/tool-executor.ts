@@ -218,18 +218,13 @@ function getQuotasForTier(tier: SubscriptionTier) {
 
 // Update user's monthly usage statistics
 async function updateUsageStats(
-  userId: string,
-  tokens: number,
-  cost: number
+  _userId: string,
+  _tokens: number,
+  _cost: number
 ): Promise<void> {
   // This could be expanded to track detailed usage metrics
   // For now, the toolRun records serve as the usage log
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      lastActiveAt: new Date(),
-    },
-  })
+  // No additional updates needed at this time
 }
 
 // Get user's current usage stats
