@@ -434,3 +434,132 @@ model Refund {
   @@index([transactionId])
   @@index([status])
 }
+
+// ============================================================================
+// HELP CENTER & KNOWLEDGE BASE
+// ============================================================================
+
+model HelpCategory {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  icon        String?
+  order       Int      @default(0)
+  published   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  articles HelpArticle[]
+
+  @@index([slug])
+  @@index([published])
+}
+
+model HelpArticle {
+  id          String   @id @default(uuid())
+  categoryId  String
+  title       String
+  slug        String   @unique
+  content     String   @db.Text
+  excerpt     String?
+  author      String   @default("Frith AI Team")
+  tags        Json?
+  published   Boolean  @default(true)
+  featured    Boolean  @default(false)
+  views       Int      @default(0)
+  helpfulVotes Int     @default(0)
+  notHelpfulVotes Int  @default(0)
+  videoUrl    String?
+  relatedArticles Json?
+  seoTitle    String?
+  seoDescription String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category HelpCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+  @@index([slug])
+  @@index([published])
+  @@index([featured])
+}
+
+model VideoTutorial {
+  id          String   @id @default(uuid())
+  title       String
+  slug        String   @unique
+  description String?  @db.Text
+  videoUrl    String
+  thumbnail   String?
+  duration    Int?
+  category    String
+  tags        Json?
+  views       Int      @default(0)
+  published   Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+  @@index([published])
+  @@index([category])
+}
+
+model Feedback {
+  id          String   @id @default(uuid())
+  userId      String?
+  type        String   // general, feature_request, bug_report
+  category    String?
+  subject     String
+  message     String   @db.Text
+  rating      Int?
+  page        String?
+  userAgent   String?
+  status      String   @default("new") // new, reviewing, planned, implemented, declined
+  adminNotes  String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+}
+
+// ============================================================================
+// SYSTEM STATUS & INCIDENTS
+// ============================================================================
+
+model SystemIncident {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @db.Text
+  status      String   // investigating, identified, monitoring, resolved
+  severity    String   // minor, major, critical
+  affectedServices Json?
+  startedAt   DateTime
+  resolvedAt  DateTime?
+  updates     Json?    // Array of incident updates
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status])
+  @@index([severity])
+  @@index([startedAt])
+}
+
+model MaintenanceWindow {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @db.Text
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  affectedServices Json?
+  status      String   @default("scheduled") // scheduled, in_progress, completed, cancelled
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([scheduledStart])
+  @@index([status])
+}
