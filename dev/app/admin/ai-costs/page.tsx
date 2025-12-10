@@ -298,6 +298,7 @@ export default function AICoPage() {
                   <th className="text-right p-3 font-semibold">Tokens</th>
                   <th className="text-right p-3 font-semibold">Total Cost</th>
                   <th className="text-right p-3 font-semibold">Cost/Run</th>
+                  <th className="text-center p-3 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -309,6 +310,16 @@ export default function AICoPage() {
                     <td className="p-3 text-right font-bold">${item.cost.toFixed(2)}</td>
                     <td className="p-3 text-right text-sm text-gray-600">
                       ${(item.cost / item.runs).toFixed(4)}
+                    </td>
+                    <td className="p-3 text-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.location.href = '/admin/tools'}
+                        className="text-xs"
+                      >
+                        View in Tools
+                      </Button>
                     </td>
                   </tr>
                 ))}

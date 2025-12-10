@@ -29,6 +29,11 @@ export default function AdminUsersPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterTier, setFilterTier] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set())
+  const [showBulkEmailModal, setShowBulkEmailModal] = useState(false)
+  const [bulkEmailSubject, setBulkEmailSubject] = useState('')
+  const [bulkEmailMessage, setBulkEmailMessage] = useState('')
+  const [sendingEmail, setSendingEmail] = useState(false)
 
   useEffect(() => {
     fetchUsers()
@@ -57,6 +62,84 @@ export default function AdminUsersPage() {
     e.preventDefault()
     setLoading(true)
     fetchUsers()
+  }
+
+  const toggleUserSelection = (userId: string) => {
+    const newSelection = new Set(selectedUsers)
+    if (newSelection.has(userId)) {
+      newSelection.delete(userId)
+    } else {
+      newSelection.add(userId)
+    }
+    setSelectedUsers(newSelection)
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedUsers.size === users.length) {
+      setSelectedUsers(new Set())
+    } else {
+      setSelectedUsers(new Set(users.map(u => u.id)))
+    }
+  }
+
+  const handleBulkEmail = async () => {
+    if (!bulkEmailSubject || !bulkEmailMessage) {
+      alert('Please provide both subject and message')
+      return
+    }
+
+    setSendingEmail(true)
+    try {
+      const response = await fetch('/api/admin/users/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userIds: Array.from(selectedUsers),
+          subject: bulkEmailSubject,
+          message: bulkEmailMessage,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        alert(`Email sent successfully to ${data.totalSent} users`)
+        setShowBulkEmailModal(false)
+        setBulkEmailSubject('')
+        setBulkEmailMessage('')
+        setSelectedUsers(new Set())
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to send emails')
+      }
+    } catch (error) {
+      console.error('Failed to send bulk email:', error)
+      alert('Failed to send emails')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
+  const exportSelectedUsers = () => {
+    const selectedUserData = users.filter(u => selectedUsers.has(u.id))
+    const csv = [
+      ['Name', 'Email', 'Role', 'Tier', 'Status', 'Tool Runs', 'Joined'],
+      ...selectedUserData.map(u => [
+        u.name,
+        u.email,
+        u.role,
+        u.subscriptionTier,
+        u.status,
+        u._count.toolRuns.toString(),
+        new Date(u.createdAt).toLocaleDateString(),
+      ])
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `selected-users-${new Date().toISOString()}.csv`
+    a.click()
   }
 
   const getRoleBadgeColor = (role: string) => {
@@ -151,6 +234,45 @@ export default function AdminUsersPage() {
         </CardContent>
       </Card>
 
+      {/* Bulk Actions */}
+      {selectedUsers.size > 0 && (
+        <Card className="border-blue-500 border-2">
+          <CardContent className="py-4">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-blue-600">
+                {selectedUsers.size} user{selectedUsers.size !== 1 ? 's' : ''} selected
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowBulkEmailModal(true)}
+                  className="gap-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  Send Email to Selected
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportSelectedUsers}
+                  className="gap-2"
+                >
+                  Export Selected as CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedUsers(new Set())}
+                >
+                  Clear Selection
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Users Table */}
       <Card>
         <CardHeader>
@@ -173,6 +295,14 @@ export default function AdminUsersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b">
+                    <th className="text-left p-3 font-semibold w-12">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.size === users.length && users.length > 0}
+                        onChange={toggleSelectAll}
+                        className="w-4 h-4"
+                      />
+                    </th>
                     <th className="text-left p-3 font-semibold">User</th>
                     <th className="text-left p-3 font-semibold">Role</th>
                     <th className="text-left p-3 font-semibold">Tier</th>
@@ -185,6 +315,14 @@ export default function AdminUsersPage() {
                 <tbody>
                   {users.map((user) => (
                     <tr key={user.id} className="border-b hover:bg-gray-50">
+                      <td className="p-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.has(user.id)}
+                          onChange={() => toggleUserSelection(user.id)}
+                          className="w-4 h-4"
+                        />
+                      </td>
                       <td className="p-3">
                         <div>
                           <p className="font-medium">{user.name}</p>
@@ -249,6 +387,65 @@ export default function AdminUsersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Bulk Email Modal */}
+      {showBulkEmailModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full m-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold">Send Email to {selectedUsers.size} Users</h2>
+              <button
+                onClick={() => setShowBulkEmailModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <Mail className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Subject *</label>
+                <Input
+                  type="text"
+                  value={bulkEmailSubject}
+                  onChange={(e) => setBulkEmailSubject(e.target.value)}
+                  placeholder="Email subject"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Message *</label>
+                <textarea
+                  value={bulkEmailMessage}
+                  onChange={(e) => setBulkEmailMessage(e.target.value)}
+                  placeholder="Email message (HTML supported)"
+                  className="w-full px-3 py-2 border rounded-md"
+                  rows={10}
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowBulkEmailModal(false)}
+                  disabled={sendingEmail}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleBulkEmail}
+                  disabled={sendingEmail || !bulkEmailSubject || !bulkEmailMessage}
+                >
+                  {sendingEmail ? 'Sending...' : `Send to ${selectedUsers.size} Users`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

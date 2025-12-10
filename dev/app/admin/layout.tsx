@@ -11,7 +11,8 @@ import {
   DollarSign, 
   Activity,
   FileText,
-  Settings 
+  Settings,
+  Search 
 } from 'lucide-react'
 
 interface User {
@@ -21,11 +22,21 @@ interface User {
   role: string
 }
 
+interface SearchResult {
+  id: string
+  type: string
+  link: string
+  [key: string]: any
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any>(null)
+  const [searching, setSearching] = useState(false)
 
   useEffect(() => {
     checkAdminAccess()
@@ -63,6 +74,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     } catch (error) {
       console.error('Sign out error:', error)
     }
+  }
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query)
+    
+    if (!query || query.length < 2) {
+      setSearchResults(null)
+      return
+    }
+
+    setSearching(true)
+    try {
+      const response = await fetch(`/api/admin/search?q=${encodeURIComponent(query)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setSearchResults(data)
+      }
+    } catch (error) {
+      console.error('Search error:', error)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const closeSearch = () => {
+    setSearchQuery('')
+    setSearchResults(null)
   }
 
   const navigation = [
@@ -149,6 +187,113 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Main Content */}
         <main className="flex-1 p-8">
+          {/* Global Search Bar */}
+          <div className="mb-6 relative">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Search users, tickets, tools, transactions..."
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Search Results Dropdown */}
+            {searchResults && (
+              <div className="absolute z-50 w-full mt-2 bg-white rounded-lg shadow-lg border max-h-96 overflow-y-auto">
+                {searching && (
+                  <div className="p-4 text-center text-gray-600">Searching...</div>
+                )}
+
+                {!searching && searchResults.totalResults === 0 && (
+                  <div className="p-4 text-center text-gray-600">No results found</div>
+                )}
+
+                {!searching && searchResults.totalResults > 0 && (
+                  <div className="p-2">
+                    {/* Users */}
+                    {searchResults.users.length > 0 && (
+                      <div className="mb-4">
+                        <p className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Users</p>
+                        {searchResults.users.map((user: any) => (
+                          <Link
+                            key={user.id}
+                            href={user.link}
+                            onClick={closeSearch}
+                            className="block px-3 py-2 hover:bg-gray-50 rounded-md"
+                          >
+                            <p className="font-medium">{user.name}</p>
+                            <p className="text-sm text-gray-600">{user.email}</p>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Tickets */}
+                    {searchResults.tickets.length > 0 && (
+                      <div className="mb-4">
+                        <p className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Support Tickets</p>
+                        {searchResults.tickets.map((ticket: any) => (
+                          <Link
+                            key={ticket.id}
+                            href={ticket.link}
+                            onClick={closeSearch}
+                            className="block px-3 py-2 hover:bg-gray-50 rounded-md"
+                          >
+                            <p className="font-medium">{ticket.subject}</p>
+                            <p className="text-sm text-gray-600">
+                              {ticket.status} • {ticket.user.name}
+                            </p>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Tools */}
+                    {searchResults.tools.length > 0 && (
+                      <div className="mb-4">
+                        <p className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Tools</p>
+                        {searchResults.tools.map((tool: any) => (
+                          <Link
+                            key={tool.id}
+                            href={tool.link}
+                            onClick={closeSearch}
+                            className="block px-3 py-2 hover:bg-gray-50 rounded-md"
+                          >
+                            <p className="font-medium">{tool.name}</p>
+                            <p className="text-sm text-gray-600">{tool.category.name}</p>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Transactions */}
+                    {searchResults.transactions.length > 0 && (
+                      <div className="mb-4">
+                        <p className="px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Transactions</p>
+                        {searchResults.transactions.map((transaction: any) => (
+                          <Link
+                            key={transaction.id}
+                            href={transaction.link}
+                            onClick={closeSearch}
+                            className="block px-3 py-2 hover:bg-gray-50 rounded-md"
+                          >
+                            <p className="font-medium">${transaction.amount}</p>
+                            <p className="text-sm text-gray-600">
+                              {transaction.status} • {transaction.user.name}
+                            </p>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {children}
         </main>
       </div>
