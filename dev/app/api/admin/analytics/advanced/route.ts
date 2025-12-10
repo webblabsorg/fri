@@ -128,8 +128,8 @@ export async function GET(request: NextRequest) {
     })
 
     // Tool Usage Distribution
-    const toolUsage = await prisma.toolRun.groupBy({
-      by: ['toolSlug'],
+    const toolUsageRaw = await prisma.toolRun.groupBy({
+      by: ['toolId'],
       where: {
         createdAt: {
           gte: startDate,
@@ -145,6 +145,25 @@ export async function GET(request: NextRequest) {
       },
       take: 10,
     })
+
+    // Get tool names for the top used tools
+    const toolIds = toolUsageRaw.map(t => t.toolId)
+    const tools = await prisma.tool.findMany({
+      where: {
+        id: { in: toolIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+      },
+    })
+    const toolMap = new Map(tools.map(t => [t.id, t.slug]))
+
+    const toolUsage = toolUsageRaw.map(t => ({
+      toolSlug: toolMap.get(t.toolId) || 'Unknown',
+      _count: t._count,
+    }))
 
     // Daily Revenue Trend
     const dailyRevenue = await prisma.$queryRaw<
