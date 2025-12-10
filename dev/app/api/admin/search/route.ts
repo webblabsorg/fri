@@ -101,30 +101,45 @@ export async function GET(request: NextRequest) {
       take: 5,
     })
 
-    // Search Transactions (by user email)
-    const transactions = await prisma.transaction.findMany({
+    // Search Transactions (by user email/name)
+    // First find matching user IDs
+    const matchingUsers = await prisma.user.findMany({
       where: {
-        user: {
-          OR: [
-            { email: { contains: query, mode: 'insensitive' } },
-            { name: { contains: query, mode: 'insensitive' } },
-          ],
-        },
+        OR: [
+          { email: { contains: query, mode: 'insensitive' } },
+          { name: { contains: query, mode: 'insensitive' } },
+        ],
       },
       select: {
         id: true,
-        amount: true,
-        status: true,
-        createdAt: true,
-        user: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
+        name: true,
+        email: true,
       },
-      take: 5,
+      take: 10,
     })
+
+    const matchingUserIds = matchingUsers.map(u => u.id)
+    const userMap = new Map(matchingUsers.map(u => [u.id, { name: u.name, email: u.email }]))
+
+    // Then find their transactions
+    const transactions = matchingUserIds.length > 0
+      ? await prisma.transaction.findMany({
+          where: {
+            userId: { in: matchingUserIds },
+          },
+          select: {
+            id: true,
+            amount: true,
+            status: true,
+            createdAt: true,
+            userId: true,
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 5,
+        })
+      : []
 
     return NextResponse.json({
       users: users.map((u) => ({
@@ -144,8 +159,9 @@ export async function GET(request: NextRequest) {
       })),
       transactions: transactions.map((t) => ({
         ...t,
+        user: userMap.get(t.userId) || { name: 'Unknown', email: '' },
         type: 'transaction',
-        link: `/admin/users/${t.user}`,
+        link: `/admin/users/${t.userId}`,
       })),
       totalResults:
         users.length + tickets.length + tools.length + transactions.length,
