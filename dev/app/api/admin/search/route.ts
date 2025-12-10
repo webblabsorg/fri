@@ -52,7 +52,13 @@ export async function GET(request: NextRequest) {
       where: {
         OR: [
           { subject: { contains: query, mode: 'insensitive' } },
-          { message: { contains: query, mode: 'insensitive' } },
+          { 
+            messages: { 
+              some: { 
+                message: { contains: query, mode: 'insensitive' } 
+              } 
+            } 
+          },
         ],
       },
       select: {
