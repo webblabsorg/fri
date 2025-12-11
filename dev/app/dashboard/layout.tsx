@@ -303,7 +303,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="p-6">
+        <main className="px-6 pt-4 pb-6">
           {children}
         </main>
         <FeedbackWidget position="bottom-right" />
