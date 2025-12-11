@@ -34,9 +34,6 @@ export async function GET(request: NextRequest) {
     // Get SSO config for this organization
     const ssoConfig = await prisma.sSOConfig.findUnique({
       where: { organizationId },
-      include: {
-        organization: true,
-      },
     })
 
     if (!ssoConfig || !ssoConfig.enabled) {
