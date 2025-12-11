@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { getAllToolConfigs, getToolsByCategory, getToolsByTier } from '@/lib/tools/tool-configs'
 import { FavoriteButton } from '@/components/tools/FavoriteButton'
-import { Zap, Star } from 'lucide-react'
+import { Zap, Star, Lock } from 'lucide-react'
 
 const CATEGORIES = [
   { id: 'all', name: 'All Tools', icon: '📋' },
@@ -27,17 +28,50 @@ const TIER_FILTERS = [
   { id: 'advanced', name: 'Advanced' },
 ]
 
+// Tier hierarchy for access checking
+const TIER_HIERARCHY: Record<string, number> = {
+  free: 0,
+  starter: 1,
+  pro: 2,
+  professional: 2,
+  advanced: 3,
+  enterprise: 3,
+}
+
 export default function ToolsPage() {
+  const router = useRouter()
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedTier, setSelectedTier] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [favoritedToolIds, setFavoritedToolIds] = useState<Set<string>>(new Set())
+  const [userTier, setUserTier] = useState<string>('free')
 
-  // Fetch user's favorites on mount
+  // Fetch user's subscription tier and favorites on mount
   useEffect(() => {
+    fetchUserData()
     fetchFavorites()
   }, [])
+
+  const fetchUserData = async () => {
+    try {
+      const response = await fetch('/api/auth/session')
+      if (response.ok) {
+        const data = await response.json()
+        if (data.user?.subscriptionTier) {
+          setUserTier(data.user.subscriptionTier.toLowerCase())
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch user data:', error)
+    }
+  }
+
+  const canAccessTool = (requiredTier: string): boolean => {
+    const userLevel = TIER_HIERARCHY[userTier] ?? 0
+    const requiredLevel = TIER_HIERARCHY[requiredTier.toLowerCase()] ?? 0
+    return userLevel >= requiredLevel
+  }
 
   const fetchFavorites = async () => {
     try {
@@ -181,62 +215,109 @@ export default function ToolsPage() {
 
         {/* Tools Grid */}
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {tools.map((tool) => (
-            <Link
-              key={tool.id}
-              href={`/dashboard/tools/${tool.id}`}
-              className="group relative rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:border-blue-500 hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
-            >
-              {/* Favorite Button & WOW Badge */}
-              <div className="absolute right-4 top-4 flex items-center gap-2">
-                <FavoriteButton 
-                  toolId={tool.id} 
-                  initialIsFavorited={favoritedToolIds.has(tool.id)}
-                  size="sm"
-                />
-                {tool.tags?.includes('wow') && (
-                  <span className="flex items-center gap-1 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-2 py-1 text-xs font-bold text-white shadow-lg">
-                    <Star className="h-3 w-3 fill-white" />
-                    WOW
-                  </span>
-                )}
-              </div>
-
-              {/* Tool Header */}
-              <div className="mb-3">
-                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 dark:text-white dark:group-hover:text-blue-400">
-                  {tool.name}
-                </h3>
-                <div className="mt-2 flex items-center gap-2">
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getTierBadgeColor(
-                      tool.requiredTier
-                    )}`}
-                  >
-                    {tool.requiredTier.toUpperCase()}
-                  </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</span>
+          {tools.map((tool) => {
+            const hasAccess = canAccessTool(tool.requiredTier)
+            
+            return hasAccess ? (
+              <Link
+                key={tool.id}
+                href={`/dashboard/tools/${tool.id}`}
+                className="group relative rounded-lg border border-gray-200 bg-white p-6 shadow-sm transition-all hover:border-blue-500 hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
+              >
+                {/* Favorite Button & WOW Badge */}
+                <div className="absolute right-4 top-4 flex items-center gap-2">
+                  <FavoriteButton 
+                    toolId={tool.id} 
+                    initialIsFavorited={favoritedToolIds.has(tool.id)}
+                    size="sm"
+                  />
+                  {tool.tags?.includes('wow') && (
+                    <span className="flex items-center gap-1 rounded-full bg-gradient-to-r from-yellow-400 to-orange-500 px-2 py-1 text-xs font-bold text-white shadow-lg">
+                      <Star className="h-3 w-3 fill-white" />
+                      WOW
+                    </span>
+                  )}
                 </div>
-              </div>
 
-              {/* Tool Description */}
-              <p className="mb-4 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
-                {tool.description}
-              </p>
-
-              {/* Tool Info */}
-              <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                <div className="flex items-center gap-1">
-                  <Zap className="h-3 w-3" />
-                  <span>{tool.estimatedTime}</span>
+                {/* Tool Header */}
+                <div className="mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 dark:text-white dark:group-hover:text-blue-400">
+                    {tool.name}
+                  </h3>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getTierBadgeColor(
+                        tool.requiredTier
+                      )}`}
+                    >
+                      {tool.requiredTier.toUpperCase()}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</span>
+                  </div>
                 </div>
-                <span className="capitalize">{tool.complexity} complexity</span>
-              </div>
 
-              {/* Hover Effect */}
-              <div className="absolute inset-0 rounded-lg border-2 border-transparent group-hover:border-blue-500 transition-colors pointer-events-none" />
-            </Link>
-          ))}
+                {/* Tool Description */}
+                <p className="mb-4 text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+                  {tool.description}
+                </p>
+
+                {/* Tool Info */}
+                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                  <div className="flex items-center gap-1">
+                    <Zap className="h-3 w-3" />
+                    <span>{tool.estimatedTime}</span>
+                  </div>
+                  <span className="capitalize">{tool.complexity} complexity</span>
+                </div>
+
+                {/* Hover Effect */}
+                <div className="absolute inset-0 rounded-lg border-2 border-transparent group-hover:border-blue-500 transition-colors pointer-events-none" />
+              </Link>
+            ) : (
+              <div
+                key={tool.id}
+                className="group relative rounded-lg border border-gray-200 bg-gray-50 p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800/50"
+              >
+                {/* Lock Badge */}
+                <div className="absolute right-4 top-4 flex items-center gap-2">
+                  <span className="flex items-center gap-1 rounded-full bg-gray-200 px-2 py-1 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                    <Lock className="h-3 w-3" />
+                    Locked
+                  </span>
+                </div>
+
+                {/* Tool Header */}
+                <div className="mb-3">
+                  <h3 className="text-lg font-semibold text-gray-500 dark:text-gray-400">
+                    {tool.name}
+                  </h3>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${getTierBadgeColor(
+                        tool.requiredTier
+                      )}`}
+                    >
+                      {tool.requiredTier.toUpperCase()}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{tool.category}</span>
+                  </div>
+                </div>
+
+                {/* Tool Description */}
+                <p className="mb-4 text-sm text-gray-500 dark:text-gray-500 line-clamp-2">
+                  {tool.description}
+                </p>
+
+                {/* Upgrade Button */}
+                <button
+                  onClick={() => router.push('/dashboard/billing')}
+                  className="w-full mt-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-medium rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all"
+                >
+                  Upgrade to {tool.requiredTier.charAt(0).toUpperCase() + tool.requiredTier.slice(1)}
+                </button>
+              </div>
+            )
+          })}
         </div>
 
         {/* No Results */}

@@ -133,7 +133,7 @@ export default function DashboardPage() {
           <CardContent className="space-y-4">
             <p className="text-sm">Available now:</p>
             <ul className="list-disc list-inside text-sm space-y-1 text-gray-700">
-              <li><strong>20 AI Tools</strong> - Legal research, drafting, analysis, and client communication</li>
+              <li><strong>240+ AI Tools</strong> - Legal research, drafting, analysis, and client communication</li>
               <li><strong>Quality Evaluation</strong> - Real-time output scoring with category-specific thresholds</li>
               <li><strong>Projects System</strong> - Organize work and track tool runs across cases</li>
               <li><strong>Templates Library</strong> - Save and reuse input configurations</li>
@@ -157,7 +157,7 @@ export default function DashboardPage() {
                 <div className="text-4xl mb-3">🔧</div>
                 <p className="font-semibold text-lg mb-1">Browse Tools</p>
                 <p className="text-sm text-gray-600">
-                  Explore 20 AI-powered legal tools
+                  Explore 240+ AI-powered legal tools
                 </p>
               </CardContent>
             </Card>
@@ -203,27 +203,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Coming Soon */}
-        <div>
-          <h3 className="text-xl font-bold mb-4">Coming Soon</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              '220+ Additional AI Tools',
-              'Team Collaboration',
-              'Advanced Analytics',
-              'Custom Tool Builder',
-              'API Access',
-              'Enterprise Features',
-            ].map((feature) => (
-              <Card key={feature} className="opacity-60 border-dashed">
-                <CardContent className="pt-6">
-                  <p className="font-medium">{feature}</p>
-                  <p className="text-sm text-gray-500 mt-1">Planned for Phase 4+</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
         </div>
       </div>
     </div>

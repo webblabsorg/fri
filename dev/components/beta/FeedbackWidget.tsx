@@ -45,8 +45,8 @@ export function FeedbackWidget({
   const [error, setError] = useState<string | null>(null)
 
   const positionClasses = position === 'bottom-right' 
-    ? 'right-4 bottom-4' 
-    : 'left-4 bottom-4'
+    ? 'right-0 top-1/2 -translate-y-1/2' 
+    : 'left-0 top-1/2 -translate-y-1/2'
 
   const feedbackTypes = [
     { value: 'general', label: 'General Feedback', icon: ThumbsUp },
@@ -100,16 +100,24 @@ export function FeedbackWidget({
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
           <Button
-            size="lg"
-            className="rounded-full shadow-lg hover:shadow-xl transition-shadow bg-primary"
+            size="sm"
+            className="rounded-l-lg rounded-r-none shadow-lg hover:shadow-xl transition-shadow bg-primary px-3 py-6 flex flex-col gap-1 writing-mode-vertical"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
           >
-            <MessageSquare className="h-5 w-5 mr-2" />
-            Feedback
+            <MessageSquare className="h-4 w-4" />
+            <span className="text-xs">Feedback</span>
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <DialogContent className="sm:max-w-[425px] max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="relative">
+            <button
+              onClick={() => setIsOpen(false)}
+              className="absolute right-0 top-0 p-1 rounded-full hover:bg-gray-100 transition-colors"
+              aria-label="Close"
+            >
+              <X className="h-5 w-5 text-gray-500" />
+            </button>
+            <DialogTitle className="flex items-center gap-2 pr-8">
               <MessageSquare className="h-5 w-5 text-primary" />
               Share Your Feedback
             </DialogTitle>
