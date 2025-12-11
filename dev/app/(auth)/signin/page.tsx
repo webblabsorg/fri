@@ -33,13 +33,20 @@ export default function SignInPage() {
     setError('')
 
     try {
+      console.log('Submitting signin form...') // Debug log
       const response = await fetch('/api/auth/signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ 
+          email: formData.email, 
+          password: formData.password, 
+          rememberMe: formData.rememberMe 
+        }),
       })
 
+      console.log('Signin response:', response.status, response.ok) // Debug log
       const data = await response.json()
+      console.log('Signin data:', data) // Debug log
 
       if (!response.ok) {
         setError(data.error || 'An error occurred')
@@ -61,9 +68,11 @@ export default function SignInPage() {
       }
 
       // Successful login - redirect to dashboard
+      console.log('Login successful, redirecting to dashboard...') // Debug log
       router.push('/dashboard')
       router.refresh()
     } catch (error) {
+      console.error('Signin error:', error) // Debug log
       setError('Network error. Please try again.')
     } finally {
       setIsLoading(false)

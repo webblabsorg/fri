@@ -35,11 +35,16 @@ export async function middleware(request: NextRequest) {
     }
     // Block admin routes on app subdomain
     if (path.startsWith('/admin')) {
-      return NextResponse.redirect(new URL('/', request.url.replace('app.', '')))
+      return NextResponse.redirect(new URL('/admin', request.url.replace('app.', '')))
     }
   } else {
     // On main domain, redirect dashboard routes to app subdomain
     if (path.startsWith('/dashboard')) {
+      const appUrl = request.url.replace('://', '://app.')
+      return NextResponse.redirect(new URL(appUrl))
+    }
+    // Redirect auth routes to app subdomain (except for admin access)
+    if ((path === '/signin' || path === '/signup') && !request.nextUrl.searchParams.get('admin')) {
       const appUrl = request.url.replace('://', '://app.')
       return NextResponse.redirect(new URL(appUrl))
     }
