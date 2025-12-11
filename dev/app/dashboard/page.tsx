@@ -73,30 +73,9 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold">Frith AI</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <SearchButton />
-              <span className="text-sm text-gray-600">{user.name}</span>
-              <button
-                onClick={handleSignOut}
-                className="text-sm text-gray-600 hover:text-gray-900"
-              >
-                Sign out
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <div className="p-6">
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Welcome back, {user.name}!</h2>
           <p className="text-gray-600">
@@ -242,7 +221,7 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
-      </main>
+      </div>
     </div>
   )
 }
