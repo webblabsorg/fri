@@ -362,7 +362,7 @@ export async function getToolUsageBreakdown(
         createdAt: { gte: since },
         ...(organizationId && {
           user: {
-            organizationMemberships: {
+            organizationMembers: {
               some: { organizationId },
             },
           },
