@@ -31,7 +31,7 @@ export async function getOrganizationBranding(
   }
 
   try {
-    const branding = await prisma.customBranding.findUnique({
+    const branding = await prisma.organizationBranding.findUnique({
       where: { organizationId },
     })
 
