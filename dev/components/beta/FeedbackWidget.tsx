@@ -45,8 +45,8 @@ export function FeedbackWidget({
   const [error, setError] = useState<string | null>(null)
 
   const positionClasses = position === 'bottom-right' 
-    ? 'right-0 top-1/2 -translate-y-1/2' 
-    : 'left-0 top-1/2 -translate-y-1/2'
+    ? 'right-6 bottom-6' 
+    : 'left-6 bottom-6'
 
   const feedbackTypes = [
     { value: 'general', label: 'General Feedback', icon: ThumbsUp },
@@ -100,12 +100,11 @@ export function FeedbackWidget({
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
         <DialogTrigger asChild>
           <Button
-            size="sm"
-            className="rounded-l-lg rounded-r-none shadow-lg hover:shadow-xl transition-shadow bg-primary px-3 py-6 flex flex-col gap-1 writing-mode-vertical"
-            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+            size="lg"
+            className="rounded-full shadow-lg hover:shadow-xl transition-shadow bg-primary"
           >
-            <MessageSquare className="h-4 w-4" />
-            <span className="text-xs">Feedback</span>
+            <MessageSquare className="h-5 w-5 mr-2" />
+            Feedback
           </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-[425px] max-h-[85vh] overflow-y-auto">
