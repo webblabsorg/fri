@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { getToken } from 'next-auth/jwt'
+import * as jwt from 'jsonwebtoken'
 
 /**
  * Middleware for:
@@ -24,23 +24,32 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // Get session token
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET })
+  // Get session token from our custom cookie
+  const sessionToken = request.cookies.get('session')?.value
+  let userId: string | null = null
+
+  if (sessionToken) {
+    try {
+      const decoded = jwt.verify(sessionToken, process.env.NEXTAUTH_SECRET || 'fallback-secret-for-dev') as any
+      userId = decoded.userId
+    } catch (error) {
+      // Invalid token, treat as not authenticated
+      console.error('Invalid session token in middleware:', error)
+    }
+  }
 
   // Protected routes that require authentication
   const protectedPaths = ['/dashboard', '/admin', '/settings', '/tools']
   const isProtectedPath = protectedPaths.some(p => path.startsWith(p))
 
-  if (isProtectedPath && !token) {
+  if (isProtectedPath && !userId) {
     const signInUrl = new URL('/signin', request.url)
     signInUrl.searchParams.set('callbackUrl', path)
     return NextResponse.redirect(signInUrl)
   }
 
   // If user is authenticated, check for SSO and IP enforcement
-  if (token?.sub) {
-    const userId = token.sub
-
+  if (userId) {
     // Check SSO enforcement (done via edge-compatible fetch to internal API)
     // Note: Full SSO check requires DB access; we set a header for route handlers
     const response = NextResponse.next()
