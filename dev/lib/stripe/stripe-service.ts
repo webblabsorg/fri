@@ -410,5 +410,302 @@ export function validateWebhookSignature(
   return stripe.webhooks.constructEvent(payload, signature, webhookSecret)
 }
 
+// ============================================================================
+// ORGANIZATION-LEVEL BILLING FUNCTIONS
+// ============================================================================
+
+// Create or retrieve Stripe customer for organization
+export async function getOrCreateOrganizationStripeCustomer(organizationId: string) {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      id: true,
+      name: true,
+      billingEmail: true,
+      stripeSubscriptionId: true,
+      members: {
+        where: { role: 'owner', status: 'active' },
+        include: {
+          user: {
+            select: { email: true, name: true }
+          }
+        },
+        take: 1
+      }
+    },
+  })
+
+  if (!organization) {
+    throw new Error('Organization not found')
+  }
+
+  // Get owner for billing contact
+  const owner = organization.members[0]?.user
+  if (!owner) {
+    throw new Error('Organization has no owner')
+  }
+
+  // Check if organization already has a Stripe customer
+  if (organization.stripeSubscriptionId) {
+    // Get subscription to find customer
+    const subscription = await stripe.subscriptions.retrieve(organization.stripeSubscriptionId)
+    return subscription.customer as string
+  }
+
+  // Create new Stripe customer for organization
+  const customer = await stripe.customers.create({
+    email: organization.billingEmail || owner.email,
+    name: organization.name,
+    metadata: {
+      organizationId: organization.id,
+      type: 'organization'
+    },
+  })
+
+  return customer.id
+}
+
+// Create checkout session for organization
+export async function createOrganizationCheckoutSession(
+  organizationId: string,
+  tier: PricingTier,
+  successUrl: string,
+  cancelUrl: string,
+  seats: number = 1
+) {
+  const customerId = await getOrCreateOrganizationStripeCustomer(organizationId)
+  const plan = PRICING_PLANS[tier]
+
+  if (!plan || plan.price === 0) {
+    throw new Error('Invalid pricing tier')
+  }
+
+  // Calculate price based on seats for team plans
+  const unitAmount = tier === 'PROFESSIONAL' || tier === 'ENTERPRISE' 
+    ? plan.price * 100 // Base price per seat
+    : plan.price * 100 // Fixed price for other plans
+
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId,
+    payment_method_types: ['card'],
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          unit_amount: unitAmount,
+          recurring: plan.interval
+            ? {
+                interval: plan.interval,
+                interval_count: 1,
+              }
+            : undefined,
+          product_data: {
+            name: `Frith AI ${plan.name} Plan`,
+            description: `${plan.description} (${seats} seats)`,
+            metadata: {
+              tier: tier.toLowerCase(),
+              plan_name: plan.name,
+              seats: seats.toString(),
+              type: 'organization'
+            },
+          },
+        },
+        quantity: seats,
+      },
+    ],
+    mode: plan.interval ? 'subscription' : 'payment',
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: {
+      organizationId,
+      tier: tier.toLowerCase(),
+      plan_name: plan.name,
+      seats: seats.toString(),
+      type: 'organization'
+    },
+    subscription_data: plan.interval
+      ? {
+          metadata: {
+            organizationId,
+            tier: tier.toLowerCase(),
+            seats: seats.toString(),
+            type: 'organization'
+          },
+        }
+      : undefined,
+  })
+
+  return session
+}
+
+// Create billing portal session for organization
+export async function createOrganizationBillingPortalSession(
+  organizationId: string,
+  returnUrl: string
+) {
+  const customerId = await getOrCreateOrganizationStripeCustomer(organizationId)
+
+  const session = await stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: returnUrl,
+  })
+
+  return session
+}
+
+// Handle successful organization payment (webhook)
+export async function handleOrganizationSuccessfulPayment(
+  subscriptionId: string,
+  customerId: string
+) {
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+
+  // Get organization from customer metadata
+  const customer = await stripe.customers.retrieve(customerId)
+  const organizationId = (customer as any).metadata?.organizationId
+
+  if (!organizationId) {
+    throw new Error('Organization ID not found in customer metadata')
+  }
+
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    include: {
+      members: {
+        where: { role: 'owner', status: 'active' },
+        take: 1
+      }
+    }
+  })
+
+  if (!organization) {
+    throw new Error('Organization not found')
+  }
+
+  // Get tier and seats from subscription metadata
+  const tier = subscription.metadata.tier || 'free'
+  const seats = parseInt(subscription.metadata.seats || '1')
+  const amount = (subscription.items.data[0].price.unit_amount || 0) / 100
+
+  // Update organization subscription status
+  await prisma.organization.update({
+    where: { id: organizationId },
+    data: {
+      planTier: tier,
+      subscriptionStatus: subscription.status,
+      stripeSubscriptionId: subscription.id,
+      seatsTotal: seats,
+    },
+  })
+
+  // Create transaction record
+  await prisma.transaction.create({
+    data: {
+      userId: organization.members[0]?.userId || '',
+      organizationId: organizationId,
+      stripePaymentId: subscription.latest_invoice as string,
+      amount: amount * seats,
+      currency: subscription.currency.toUpperCase(),
+      status: 'completed',
+      type: 'subscription',
+      metadata: {
+        tier,
+        planName: tier.toUpperCase(),
+        subscriptionId: subscription.id,
+        seats: seats.toString(),
+        type: 'organization'
+      },
+    },
+  })
+}
+
+// Handle organization subscription cancellation
+export async function handleOrganizationSubscriptionCancellation(
+  subscriptionId: string,
+  customerId: string
+) {
+  const customer = await stripe.customers.retrieve(customerId)
+  const organizationId = (customer as any).metadata?.organizationId
+
+  if (!organizationId) return
+
+  await prisma.organization.update({
+    where: { id: organizationId },
+    data: {
+      planTier: 'free',
+      subscriptionStatus: 'cancelled',
+      stripeSubscriptionId: null,
+      seatsTotal: 1,
+    },
+  })
+}
+
+// Update organization subscription seats
+export async function updateOrganizationSeats(
+  organizationId: string,
+  newSeats: number
+) {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { stripeSubscriptionId: true }
+  })
+
+  if (!organization?.stripeSubscriptionId) {
+    throw new Error('No active subscription found')
+  }
+
+  const subscription = await stripe.subscriptions.retrieve(organization.stripeSubscriptionId)
+  
+  // Update subscription quantity
+  await stripe.subscriptions.update(organization.stripeSubscriptionId, {
+    items: [
+      {
+        id: subscription.items.data[0].id,
+        quantity: newSeats,
+      },
+    ],
+    metadata: {
+      ...subscription.metadata,
+      seats: newSeats.toString(),
+    },
+    proration_behavior: 'create_prorations',
+  })
+
+  // Update organization
+  await prisma.organization.update({
+    where: { id: organizationId },
+    data: { seatsTotal: newSeats }
+  })
+}
+
+// Get organization billing info
+export async function getOrganizationBilling(organizationId: string) {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: {
+      planTier: true,
+      subscriptionStatus: true,
+      stripeSubscriptionId: true,
+      seatsTotal: true,
+      seatsUsed: true,
+      billingEmail: true,
+    }
+  })
+
+  if (!organization) {
+    throw new Error('Organization not found')
+  }
+
+  let subscription = null
+  if (organization.stripeSubscriptionId) {
+    subscription = await stripe.subscriptions.retrieve(organization.stripeSubscriptionId)
+  }
+
+  return {
+    ...organization,
+    subscription
+  }
+}
+
 // Export stripe instance for direct access if needed
 export { stripe }

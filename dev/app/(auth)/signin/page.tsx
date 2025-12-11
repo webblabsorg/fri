@@ -50,6 +50,13 @@ export default function SignInPage() {
             router.push('/verify-email')
           }, 2000)
         }
+        
+        // Handle SSO required - redirect to SSO provider
+        if (data.code === 'SSO_REQUIRED' && data.ssoUrl) {
+          setTimeout(() => {
+            window.location.href = data.ssoUrl
+          }, 2000)
+        }
         return
       }
 

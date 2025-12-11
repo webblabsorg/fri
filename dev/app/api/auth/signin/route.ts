@@ -8,6 +8,72 @@ import {
 } from '@/lib/auth'
 import { signInSchema } from '@/lib/validations/auth'
 
+/**
+ * Check if user's organization enforces SSO
+ */
+async function checkSSORequired(userId: string): Promise<{
+  required: boolean
+  ssoUrl?: string
+  organizationName?: string
+}> {
+  try {
+    const memberships = await prisma.organizationMember.findMany({
+      where: { userId },
+      include: {
+        organization: {
+          select: { id: true, name: true, planTier: true },
+        },
+      },
+    })
+
+    for (const membership of memberships) {
+      if (membership.organization.planTier === 'enterprise') {
+        const ssoConfig = await prisma.sSOConfig.findUnique({
+          where: { organizationId: membership.organizationId },
+        })
+
+        if (ssoConfig?.enabled && ssoConfig?.enforceSSO) {
+          const callbackUrl = `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/sso/callback`
+          let ssoUrl: string | undefined
+
+          if (ssoConfig.provider === 'azure_ad' && ssoConfig.tenantId && ssoConfig.oauthClientId) {
+            const params = new URLSearchParams({
+              client_id: ssoConfig.oauthClientId,
+              redirect_uri: callbackUrl,
+              response_type: 'code',
+              scope: 'openid profile email',
+              state: membership.organizationId,
+            })
+            ssoUrl = `https://login.microsoftonline.com/${ssoConfig.tenantId}/oauth2/v2.0/authorize?${params}`
+          } else if (ssoConfig.provider === 'okta' && ssoConfig.domain && ssoConfig.oauthClientId) {
+            const params = new URLSearchParams({
+              client_id: ssoConfig.oauthClientId,
+              redirect_uri: callbackUrl,
+              response_type: 'code',
+              scope: 'openid profile email',
+              state: membership.organizationId,
+            })
+            ssoUrl = `https://${ssoConfig.domain}/oauth2/v1/authorize?${params}`
+          } else if (ssoConfig.samlSsoUrl) {
+            ssoUrl = ssoConfig.samlSsoUrl
+          }
+
+          return {
+            required: true,
+            ssoUrl,
+            organizationName: membership.organization.name,
+          }
+        }
+      }
+    }
+
+    return { required: false }
+  } catch (error) {
+    console.error('SSO check error:', error)
+    return { required: false }
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -98,6 +164,19 @@ export async function POST(request: NextRequest) {
     if (user.status === 'deleted') {
       return NextResponse.json(
         { error: 'This account no longer exists.' },
+        { status: 403 }
+      )
+    }
+
+    // Check if SSO is required for this user's organization
+    const ssoCheck = await checkSSORequired(user.id)
+    if (ssoCheck.required) {
+      return NextResponse.json(
+        {
+          error: `Your organization "${ssoCheck.organizationName}" requires SSO login. Please use the SSO button to sign in.`,
+          code: 'SSO_REQUIRED',
+          ssoUrl: ssoCheck.ssoUrl,
+        },
         { status: 403 }
       )
     }

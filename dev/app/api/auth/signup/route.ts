@@ -3,9 +3,23 @@ import { prisma } from '@/lib/db'
 import { hashPassword, generateEmailVerificationToken } from '@/lib/auth'
 import { signUpSchema } from '@/lib/validations/auth'
 import { sendEmail, getVerificationEmailTemplate } from '@/lib/email'
+import { isSignupAllowed } from '@/lib/launch-settings'
 
 export async function POST(request: NextRequest) {
   try {
+    // Check if public signups are allowed
+    const signupsOpen = await isSignupAllowed()
+    if (!signupsOpen) {
+      return NextResponse.json(
+        { 
+          error: 'Signups are currently invite-only. Please join the waitlist.',
+          code: 'SIGNUPS_CLOSED',
+          waitlistUrl: '/waitlist',
+        },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
 
     // Validate input

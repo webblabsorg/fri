@@ -220,6 +220,7 @@ export default function AdminSupportPage() {
                     <th className="text-left p-3 font-semibold">Ticket #</th>
                     <th className="text-left p-3 font-semibold">Subject</th>
                     <th className="text-left p-3 font-semibold">User</th>
+                    <th className="text-left p-3 font-semibold">Assigned To</th>
                     <th className="text-left p-3 font-semibold">Priority</th>
                     <th className="text-left p-3 font-semibold">Status</th>
                     <th className="text-left p-3 font-semibold">Messages</th>
@@ -229,7 +230,9 @@ export default function AdminSupportPage() {
                 </thead>
                 <tbody>
                   {tickets.map((ticket) => (
-                    <tr key={ticket.id} className="border-b hover:bg-gray-50">
+                    <tr key={ticket.id} className={`border-b hover:bg-gray-50 ${
+                      ticket.assignedTo === 'current-admin' ? 'bg-blue-50' : ''
+                    }`}>
                       <td className="p-3">
                         <span className="font-mono text-sm">{ticket.ticketNumber}</span>
                       </td>
@@ -240,6 +243,13 @@ export default function AdminSupportPage() {
                       <td className="p-3">
                         <p className="text-sm">{ticket.user.name}</p>
                         <p className="text-xs text-gray-600">{ticket.user.email}</p>
+                      </td>
+                      <td className="p-3">
+                        <span className={`text-sm ${
+                          ticket.assignedTo === 'current-admin' ? 'font-medium text-blue-600' : 'text-gray-600'
+                        }`}>
+                          {ticket.assignedTo === 'current-admin' ? 'Me' : ticket.assignedTo || 'Unassigned'}
+                        </span>
                       </td>
                       <td className="p-3">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityColor(ticket.priority)}`}>

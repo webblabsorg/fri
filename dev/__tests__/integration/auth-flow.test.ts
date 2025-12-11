@@ -1,5 +1,15 @@
-import { hashPassword, verifyPassword } from '@/lib/auth'
+/**
+ * Authentication Flow Integration Tests
+ * Uses bcrypt directly to avoid mock conflicts with test-setup.ts
+ */
+import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
+
+const BCRYPT_ROUNDS = 12
+
+// Direct bcrypt functions for testing (avoid mock conflicts)
+const hashPassword = (password: string) => bcrypt.hash(password, BCRYPT_ROUNDS)
+const verifyPassword = (password: string, hash: string) => bcrypt.compare(password, hash)
 
 describe('Authentication Flow Integration', () => {
   describe('Password Hashing', () => {

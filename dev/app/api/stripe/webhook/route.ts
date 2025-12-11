@@ -4,6 +4,8 @@ import {
   handleSuccessfulPayment,
   handleFailedPayment,
   handleSubscriptionCancellation,
+  handleOrganizationSuccessfulPayment,
+  handleOrganizationSubscriptionCancellation,
 } from '@/lib/stripe/stripe-service'
 import Stripe from 'stripe'
 
@@ -39,10 +41,20 @@ export async function POST(request: NextRequest) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
         if (session.subscription && session.customer) {
-          await handleSuccessfulPayment(
-            session.subscription as string,
-            session.customer as string
-          )
+          // Check if this is an organization subscription
+          const isOrganization = session.metadata?.type === 'organization'
+          
+          if (isOrganization) {
+            await handleOrganizationSuccessfulPayment(
+              session.subscription as string,
+              session.customer as string
+            )
+          } else {
+            await handleSuccessfulPayment(
+              session.subscription as string,
+              session.customer as string
+            )
+          }
         }
         break
       }
@@ -57,7 +69,16 @@ export async function POST(request: NextRequest) {
           : invoice.customer?.id
         
         if (subscriptionId && customerId) {
-          await handleSuccessfulPayment(subscriptionId, customerId)
+          // Get subscription to check metadata
+          const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
+          const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+          const isOrganization = subscription.metadata?.type === 'organization'
+          
+          if (isOrganization) {
+            await handleOrganizationSuccessfulPayment(subscriptionId, customerId)
+          } else {
+            await handleSuccessfulPayment(subscriptionId, customerId)
+          }
         }
         break
       }
@@ -80,10 +101,20 @@ export async function POST(request: NextRequest) {
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription
         if (subscription.customer) {
-          await handleSubscriptionCancellation(
-            subscription.id,
-            subscription.customer as string
-          )
+          // Check if this is an organization subscription
+          const isOrganization = subscription.metadata?.type === 'organization'
+          
+          if (isOrganization) {
+            await handleOrganizationSubscriptionCancellation(
+              subscription.id,
+              subscription.customer as string
+            )
+          } else {
+            await handleSubscriptionCancellation(
+              subscription.id,
+              subscription.customer as string
+            )
+          }
         }
         break
       }

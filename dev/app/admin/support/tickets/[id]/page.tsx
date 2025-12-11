@@ -14,6 +14,7 @@ interface TicketDetail {
   priority: string
   status: string
   assignedTo: string | null
+  mergedIntoId: string | null
   createdAt: string
   updatedAt: string
   resolvedAt: string | null
@@ -41,6 +42,8 @@ export default function AdminTicketDetailPage() {
   const [replyMessage, setReplyMessage] = useState('')
   const [replying, setReplying] = useState(false)
   const [updating, setUpdating] = useState(false)
+  const [mergeTargetId, setMergeTargetId] = useState('')
+  const [merging, setMerging] = useState(false)
 
   useEffect(() => {
     if (params.id) {
@@ -141,6 +144,87 @@ export default function AdminTicketDetailPage() {
     } finally {
       setUpdating(false)
     }
+  }
+
+  const handleUpdateAssignment = async (assignedTo: string | null) => {
+    if (!ticket) return
+
+    setUpdating(true)
+    try {
+      const response = await fetch(`/api/admin/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignedTo: assignedTo || null }),
+      })
+
+      if (response.ok) {
+        await fetchTicket(ticket.id)
+        alert('Assignment updated successfully')
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to update assignment')
+      }
+    } catch (error) {
+      console.error('Failed to update assignment:', error)
+      alert('Failed to update assignment')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const handleMergeTicket = async () => {
+    if (!ticket || !mergeTargetId.trim()) return
+
+    setMerging(true)
+    try {
+      const response = await fetch(`/api/admin/tickets/${ticket.id}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetTicketId: mergeTargetId }),
+      })
+
+      if (response.ok) {
+        await fetchTicket(ticket.id)
+        setMergeTargetId('')
+        alert('Ticket merged successfully')
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to merge ticket')
+      }
+    } catch (error) {
+      console.error('Failed to merge ticket:', error)
+      alert('Failed to merge ticket')
+    } finally {
+      setMerging(false)
+    }
+  }
+
+  const getTicketAge = () => {
+    if (!ticket) return ''
+    const now = new Date()
+    const created = new Date(ticket.createdAt)
+    const diffMs = now.getTime() - created.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+    
+    if (diffDays > 0) {
+      return `${diffDays}d ${diffHours}h`
+    }
+    return `${diffHours}h`
+  }
+
+  const getResolutionTime = () => {
+    if (!ticket?.resolvedAt) return null
+    const resolved = new Date(ticket.resolvedAt)
+    const created = new Date(ticket.createdAt)
+    const diffMs = resolved.getTime() - created.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+    
+    if (diffDays > 0) {
+      return `${diffDays}d ${diffHours}h`
+    }
+    return `${diffHours}h`
   }
 
   if (loading) {
@@ -317,6 +401,19 @@ export default function AdminTicketDetailPage() {
               </div>
 
               <div>
+                <p className="text-sm text-gray-600 mb-1">Assigned To</p>
+                <select
+                  value={ticket.assignedTo || ''}
+                  onChange={(e) => handleUpdateAssignment(e.target.value || null)}
+                  disabled={updating}
+                  className="w-full px-3 py-2 border rounded-md"
+                >
+                  <option value="">Unassigned</option>
+                  <option value="current-admin">Me</option>
+                </select>
+              </div>
+
+              <div>
                 <p className="text-sm text-gray-600">Category</p>
                 <p className="font-medium capitalize">{ticket.category}</p>
               </div>
@@ -326,10 +423,29 @@ export default function AdminTicketDetailPage() {
                 <p className="font-medium">{new Date(ticket.createdAt).toLocaleString()}</p>
               </div>
 
+              <div>
+                <p className="text-sm text-gray-600">Age</p>
+                <p className="font-medium">{getTicketAge()}</p>
+              </div>
+
               {ticket.resolvedAt && (
                 <div>
                   <p className="text-sm text-gray-600">Resolved</p>
                   <p className="font-medium">{new Date(ticket.resolvedAt).toLocaleString()}</p>
+                </div>
+              )}
+
+              {ticket.resolvedAt && (
+                <div>
+                  <p className="text-sm text-gray-600">Resolution Time</p>
+                  <p className="font-medium">{getResolutionTime()}</p>
+                </div>
+              )}
+
+              {ticket.mergedIntoId && (
+                <div>
+                  <p className="text-sm text-gray-600">Merged Into</p>
+                  <p className="font-medium text-blue-600">Ticket #{ticket.mergedIntoId}</p>
                 </div>
               )}
             </CardContent>
@@ -366,6 +482,39 @@ export default function AdminTicketDetailPage() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Merge Ticket */}
+          {!ticket.mergedIntoId && ticket.status !== 'closed' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Merge Ticket</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <p className="text-sm text-gray-600 mb-2">Target Ticket ID</p>
+                  <input
+                    type="text"
+                    value={mergeTargetId}
+                    onChange={(e) => setMergeTargetId(e.target.value)}
+                    placeholder="Enter ticket ID to merge into"
+                    className="w-full px-3 py-2 border rounded-md"
+                    disabled={merging}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleMergeTicket}
+                  disabled={merging || !mergeTargetId.trim()}
+                >
+                  {merging ? 'Merging...' : 'Merge Ticket'}
+                </Button>
+                <p className="text-xs text-gray-500">
+                  This will close this ticket and mark it as merged into the target ticket.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

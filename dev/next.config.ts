@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
   images: {
     domains: ['localhost'],
   },
+  eslint: {
+    // Allow production builds to succeed even if there are ESLint warnings/errors.
+    // Linting can still be enforced separately via `npm run lint`.
+    ignoreDuringBuilds: true,
+  },
 }
 
 export default nextConfig

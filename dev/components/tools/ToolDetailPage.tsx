@@ -12,6 +12,8 @@ import { Card } from '@/components/ui/card'
 import { SaveToProjectModal } from './SaveToProjectModal'
 import { SaveAsTemplateModal } from '@/components/templates/SaveAsTemplateModal'
 import { TemplateLibrary } from '@/components/templates/TemplateLibrary'
+import CollaborationPanel from '@/components/collaboration/CollaborationPanel'
+import { useOrganization } from '@/components/providers/OrganizationProvider'
 
 interface ToolDetailPageProps {
   tool: ToolConfig
@@ -34,6 +36,7 @@ interface ExecutionMetadata {
 
 export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
   const router = useRouter()
+  const { currentWorkspace } = useOrganization()
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [isRunning, setIsRunning] = useState(false)
   const [output, setOutput] = useState<string | null>(null)
@@ -47,6 +50,7 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
   const [useStreaming, setUseStreaming] = useState(true)
   const [fileLoading, setFileLoading] = useState<Record<string, boolean>>({})
   const [fileError, setFileError] = useState<Record<string, string>>({})
+  const [showCollaboration, setShowCollaboration] = useState(false)
 
   const canUseTool = checkToolAccess(tool.requiredTier, userTier)
   const aiModel = tool.aiModel[userTier]
@@ -340,22 +344,34 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
           </div>
         </div>
 
-        <div className="flex gap-4 text-sm">
-          <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
-            {tool.category}
-          </span>
-          <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full">
-            AI Model: {aiModel}
-          </span>
-          <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full">
-            {tool.estimatedTime}
-          </span>
+        <div className="flex items-center justify-between">
+          <div className="flex gap-4 text-sm">
+            <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
+              {tool.category}
+            </span>
+            <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full">
+              AI Model: {aiModel}
+            </span>
+            <span className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full">
+              {tool.estimatedTime}
+            </span>
+          </div>
+          
+          {currentWorkspace && executionMetadata && (
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => setShowCollaboration(!showCollaboration)}
+            >
+              {showCollaboration ? 'Hide' : 'Show'} Collaboration
+            </Button>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className={`grid grid-cols-1 gap-8 ${showCollaboration ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
         {/* Input Form */}
-        <div className="lg:col-span-2">
+        <div className={showCollaboration ? 'lg:col-span-2' : 'lg:col-span-2'}>
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-6">Input</h2>
 
@@ -661,6 +677,17 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
             </Card>
           )}
         </div>
+
+        {/* Collaboration Panel */}
+        {showCollaboration && currentWorkspace && executionMetadata && (
+          <div className="lg:col-span-1">
+            <CollaborationPanel
+              targetType="tool_run"
+              targetId={executionMetadata.executionId}
+              workspaceId={currentWorkspace.id}
+            />
+          </div>
+        )}
       </div>
 
       {/* Save to Project Modal */}

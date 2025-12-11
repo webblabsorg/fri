@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "frithai"
+version = "1.0.0"
+description = "Official Python SDK for Frith AI Legal Tools API"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Frith AI", email = "dev@frithai.com"}]
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["frith", "legal", "ai", "sdk", "api"]
+dependencies = ["httpx>=0.24.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0", "pytest-cov>=4.0.0", "pytest-mock>=3.10.0"]
+
+[project.urls]
+Homepage = "https://frithai.com"
+Documentation = "https://docs.frithai.com"
+Repository = "https://github.com/frithai/sdk-python"
+
+[tool.setuptools.packages.find]
+include = ["frithai*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=frithai",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--strict-markers",
+]

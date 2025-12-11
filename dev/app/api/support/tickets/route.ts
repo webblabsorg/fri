@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { subject, category, priority, message } = body
+    const { subject, category, priority, message, attachments } = body
 
     if (!subject || !category || !message) {
       return NextResponse.json(
@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
         category,
         priority: priority || 'medium',
         status: 'open',
+        attachments: attachments && attachments.length > 0 ? attachments : null,
       },
     })
 
@@ -49,6 +50,26 @@ export async function POST(request: NextRequest) {
         message,
       },
     })
+
+    // Send confirmation email
+    try {
+      const { sendEmail, getTicketConfirmationTemplate } = await import('@/lib/email')
+      const ticketUrl = `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/support/tickets/${ticket.id}`
+      
+      await sendEmail({
+        to: user.email,
+        subject: `Support Ticket Received: ${ticket.ticketNumber}`,
+        html: getTicketConfirmationTemplate(
+          user.name,
+          ticket.ticketNumber,
+          subject,
+          ticketUrl
+        ),
+      })
+    } catch (emailError) {
+      console.error('Failed to send ticket confirmation email:', emailError)
+      // Don't fail the ticket creation if email fails
+    }
 
     return NextResponse.json({
       success: true,

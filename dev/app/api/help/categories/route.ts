@@ -10,11 +10,7 @@ export async function GET(request: NextRequest) {
       include: {
         _count: {
           select: {
-            articles: {
-              where: {
-                published: true,
-              },
-            },
+            articles: true,
           },
         },
       },

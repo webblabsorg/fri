@@ -24,6 +24,11 @@ export async function GET(request: NextRequest) {
         subscriptionTier: user.subscriptionTier,
         firmName: user.firmName,
         emailVerified: user.emailVerified,
+        onboardingCompleted: user.onboardingCompleted,
+        // Beta program fields
+        isBetaUser: user.isBetaUser,
+        earlyAdopter: user.earlyAdopter,
+        betaTrialEndsAt: user.betaTrialEndsAt,
       },
     })
   } catch (error) {

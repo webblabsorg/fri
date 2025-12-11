@@ -1,15 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { AlertCircle } from 'lucide-react'
 
 export default function SignUpPage() {
   const router = useRouter()
+  const [signupsOpen, setSignupsOpen] = useState<boolean | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -23,6 +25,25 @@ export default function SignUpPage() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
+
+  // Check if signups are open
+  useEffect(() => {
+    const checkSignups = async () => {
+      try {
+        const response = await fetch('/api/launch/settings')
+        if (response.ok) {
+          const data = await response.json()
+          setSignupsOpen(data.openSignups)
+        } else {
+          // If we can't check, assume open
+          setSignupsOpen(true)
+        }
+      } catch {
+        setSignupsOpen(true)
+      }
+    }
+    checkSignups()
+  }, [])
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target
@@ -97,6 +118,53 @@ export default function SignUpPage() {
     'bg-green-500',
     'bg-emerald-500',
   ]
+
+  // Show loading while checking signup status
+  if (signupsOpen === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  // Show waitlist message if signups are closed
+  if (signupsOpen === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <Card className="w-full max-w-md">
+          <CardHeader className="space-y-1">
+            <div className="flex justify-center mb-4">
+              <div className="text-3xl font-bold">Frith AI</div>
+            </div>
+            <CardTitle className="text-2xl text-center">Coming Soon</CardTitle>
+            <CardDescription className="text-center">
+              We're not quite ready for everyone yet
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
+                <AlertCircle className="h-8 w-8 text-blue-600" />
+              </div>
+              <p className="text-gray-600">
+                Signups are currently invite-only. Join our waitlist to be notified when we open to the public.
+              </p>
+              <Link href="/waitlist">
+                <Button className="w-full">Join the Waitlist</Button>
+              </Link>
+              <p className="text-sm text-gray-500">
+                Already have an invitation?{' '}
+                <Link href="/signin" className="text-blue-600 hover:underline">
+                  Sign in here
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

@@ -209,22 +209,23 @@ async function main() {
   // ============================================================================
   // SAMPLE TOOLS (First 5 for MVP testing - full 240 tools added in Phase 3)
   // ============================================================================
-  console.log('🔧 Creating sample tools...')
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('🔧 Creating sample tools...')
 
-  const researchCategory = await prisma.category.findUnique({
-    where: { slug: 'legal-research' },
-  })
+    const researchCategory = await prisma.category.findUnique({
+      where: { slug: 'legal-research' },
+    })
 
-  const draftingCategory = await prisma.category.findUnique({
-    where: { slug: 'document-drafting' },
-  })
+    const draftingCategory = await prisma.category.findUnique({
+      where: { slug: 'document-drafting' },
+    })
 
-  const contractCategory = await prisma.category.findUnique({
-    where: { slug: 'contract-review' },
-  })
+    const contractCategory = await prisma.category.findUnique({
+      where: { slug: 'contract-review' },
+    })
 
-  if (researchCategory && draftingCategory && contractCategory) {
-    const tools = [
+    if (researchCategory && draftingCategory && contractCategory) {
+      const tools = [
       {
         name: 'Conversational Legal Research',
         slug: 'conversational-legal-research',
@@ -414,96 +415,297 @@ Provide a complete, ready-to-send email with:
       },
     ]
 
-    for (const tool of tools) {
-      await prisma.tool.upsert({
-        where: { slug: tool.slug },
-        update: tool,
-        create: tool,
-      })
-    }
+      for (const tool of tools) {
+        await prisma.tool.upsert({
+          where: { slug: tool.slug },
+          update: tool,
+          create: tool,
+        })
+      }
 
-    console.log(`✅ Created ${tools.length} sample tools`)
+      console.log(`✅ Created ${tools.length} sample tools`)
+    }
   }
 
   // ============================================================================
   // TEST USER & ORGANIZATION (for development)
   // ============================================================================
-  console.log('👤 Creating test user and organization...')
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('👤 Creating test user and organization...')
 
-  const hashedPassword = await bcrypt.hash('Test123!@#', 12)
+    const hashedPassword = await bcrypt.hash('Test123!@#', 12)
 
-  const testOrg = await prisma.organization.upsert({
-    where: { id: 'test-org-001' },
-    update: {},
-    create: {
-      id: 'test-org-001',
-      name: 'Test Law Firm',
-      type: 'law_firm',
-      planTier: 'professional',
-      subscriptionStatus: 'active',
-      seatsTotal: 5,
-      seatsUsed: 1,
-      billingEmail: 'billing@testlawfirm.com',
-      status: 'active',
-    },
-  })
+    const testOrg = await prisma.organization.upsert({
+      where: { id: 'test-org-001' },
+      update: {},
+      create: {
+        id: 'test-org-001',
+        name: 'Test Law Firm',
+        type: 'law_firm',
+        planTier: 'professional',
+        subscriptionStatus: 'active',
+        seatsTotal: 5,
+        seatsUsed: 1,
+        billingEmail: 'billing@testlawfirm.com',
+        status: 'active',
+      },
+    })
 
-  const testUser = await prisma.user.upsert({
-    where: { email: 'admin@testlawfirm.com' },
-    update: {},
-    create: {
-      name: 'Admin User',
-      email: 'admin@testlawfirm.com',
-      emailVerified: true,
-      passwordHash: hashedPassword,
-      firmName: 'Test Law Firm',
-      role: 'admin',
-      subscriptionTier: 'professional',
-      subscriptionStatus: 'active',
-      status: 'active',
-    },
-  })
+    const testUser = await prisma.user.upsert({
+      where: { email: 'admin@testlawfirm.com' },
+      update: {},
+      create: {
+        name: 'Admin User',
+        email: 'admin@testlawfirm.com',
+        emailVerified: true,
+        passwordHash: hashedPassword,
+        firmName: 'Test Law Firm',
+        role: 'admin',
+        subscriptionTier: 'professional',
+        subscriptionStatus: 'active',
+        status: 'active',
+      },
+    })
 
-  // Link user to organization
-  await prisma.organizationMember.upsert({
-    where: {
-      organizationId_userId: {
+    // Link user to organization
+    await prisma.organizationMember.upsert({
+      where: {
+        organizationId_userId: {
+          organizationId: testOrg.id,
+          userId: testUser.id,
+        },
+      },
+      update: {},
+      create: {
         organizationId: testOrg.id,
         userId: testUser.id,
+        role: 'owner',
+        status: 'active',
+        joinedAt: new Date(),
       },
-    },
-    update: {},
-    create: {
-      organizationId: testOrg.id,
-      userId: testUser.id,
-      role: 'owner',
-      status: 'active',
-      joinedAt: new Date(),
-    },
-  })
+    })
 
-  // Create personal workspace for test user
-  const testWorkspace = await prisma.workspace.create({
-    data: {
-      organizationId: testOrg.id,
-      name: 'My Workspace',
-      type: 'personal',
-      ownerId: testUser.id,
-      status: 'active',
-    },
-  })
+    // Create personal workspace for test user
+    const testWorkspace = await prisma.workspace.create({
+      data: {
+        organizationId: testOrg.id,
+        name: 'My Workspace',
+        type: 'personal',
+        ownerId: testUser.id,
+        status: 'active',
+      },
+    })
 
-  await prisma.workspaceMember.create({
-    data: {
-      workspaceId: testWorkspace.id,
-      userId: testUser.id,
-      role: 'admin',
-    },
-  })
+    await prisma.workspaceMember.create({
+      data: {
+        workspaceId: testWorkspace.id,
+        userId: testUser.id,
+        role: 'admin',
+      },
+    })
 
-  console.log('✅ Test user created: admin@testlawfirm.com / Test123!@#')
-  console.log(`✅ Test organization: ${testOrg.name}`)
-  console.log(`✅ Test workspace: ${testWorkspace.name}`)
+    console.log('✅ Test user created: admin@testlawfirm.com / Test123!@#')
+    console.log(`✅ Test organization: ${testOrg.name}`)
+    console.log(`✅ Test workspace: ${testWorkspace.name}`)
+  }
+
+  // ============================================================================
+  // HELP CENTER - Categories & Articles
+  // ============================================================================
+  console.log('📚 Creating help center content...')
+
+  const helpCategories = [
+    { name: 'Getting Started', slug: 'getting-started', description: 'Learn the basics of Frith AI', order: 1 },
+    { name: 'Features & Tools', slug: 'features-tools', description: 'Explore our 240+ AI tools', order: 2 },
+    { name: 'Billing & Plans', slug: 'billing', description: 'Manage your subscription', order: 3 },
+    { name: 'Account Settings', slug: 'account', description: 'Customize your profile', order: 4 },
+    { name: 'Troubleshooting', slug: 'troubleshooting', description: 'Fix common issues', order: 5 },
+  ]
+
+  const createdCategories: any[] = []
+  for (const cat of helpCategories) {
+    const category = await prisma.helpCategory.upsert({
+      where: { slug: cat.slug },
+      update: {},
+      create: cat,
+    })
+    createdCategories.push(category)
+  }
+
+  // Sample articles for each category
+  const articles = [
+    // Getting Started
+    {
+      categoryId: createdCategories[0].id,
+      title: 'How to run your first AI tool',
+      slug: 'how-to-run-first-tool',
+      content: `## Welcome to Frith AI!\n\nThis guide will help you run your first AI tool.\n\n### Step 1: Browse the Tool Catalog\nNavigate to the Dashboard and click "All Tools" to see our complete catalog of 240+ AI tools.\n\n### Step 2: Select a Tool\nClick on any tool to view its details, input requirements, and sample outputs.\n\n### Step 3: Enter Your Input\nProvide the required information in the input form. Each tool has different requirements.\n\n### Step 4: Run the Tool\nClick "Run Tool" and wait for the AI to process your request.\n\n### Step 5: View Results\nOnce complete, you can view, edit, copy, or export your results.\n\nNeed help? Contact support anytime!`,
+      excerpt: 'Learn how to run your first AI-powered legal tool in 5 simple steps',
+      published: true,
+      featured: true,
+      views: 245,
+      helpfulVotes: 42,
+    },
+    {
+      categoryId: createdCategories[0].id,
+      title: 'Creating your account',
+      slug: 'creating-account',
+      content: `## Creating Your Frith AI Account\n\nSign up in minutes and start using AI tools immediately.\n\n### Registration\n1. Click "Sign Up" on the homepage\n2. Enter your name, email, and password\n3. Accept the terms of service\n4. Click "Create Account"\n\n### Email Verification\nCheck your email for a verification link. Click it to activate your account.\n\n### Choose Your Plan\nSelect from Free, Pro, Professional, or Enterprise plans based on your needs.`,
+      excerpt: 'Step-by-step guide to creating your Frith AI account',
+      published: true,
+      views: 189,
+      helpfulVotes: 35,
+    },
+    // Features & Tools
+    {
+      categoryId: createdCategories[1].id,
+      title: 'Understanding tool outputs',
+      slug: 'understanding-tool-outputs',
+      content: `## Tool Outputs Explained\n\nEvery tool run generates detailed outputs with provenance information.\n\n### What You'll See\n- **Main Output**: The AI-generated result\n- **Sources**: Citations and references used\n- **AI Model**: Which model processed your request\n- **Tokens Used**: Computational resources consumed\n- **Confidence Score**: Reliability indicator\n\n### Actions You Can Take\n- Copy to clipboard\n- Export to Word/PDF\n- Save to project\n- Share with team\n- Rate output quality`,
+      excerpt: 'Learn how to interpret and use tool outputs effectively',
+      published: true,
+      featured: true,
+      views: 156,
+      helpfulVotes: 28,
+    },
+    {
+      categoryId: createdCategories[1].id,
+      title: 'Exporting results to Word',
+      slug: 'export-to-word',
+      content: `## Exporting to Microsoft Word\n\nEasily export any tool output to a formatted Word document.\n\n### Steps\n1. Run your tool and view the output\n2. Click the "Export" button\n3. Select "Microsoft Word (.docx)"\n4. The file will download automatically\n5. Open in Word for further editing\n\n### Formatting\nExported documents maintain:\n- Headings and structure\n- Citations and footnotes\n- Tables and lists\n- Professional formatting`,
+      excerpt: 'Export AI-generated documents to Microsoft Word format',
+      published: true,
+      views: 134,
+      helpfulVotes: 24,
+    },
+    // Billing & Plans
+    {
+      categoryId: createdCategories[2].id,
+      title: 'Understanding pricing plans',
+      slug: 'pricing-plans',
+      content: `## Frith AI Pricing Plans\n\n### Free Plan\n- 3 tools\n- 10 runs per month\n- Gemini Flash AI\n- Community support\n\n### Pro Plan - $79/month\n- 15 tools\n- 500 runs per month\n- Claude Haiku AI\n- Email support\n\n### Professional - $199/month\n- 35 tools\n- 2,000 runs per month\n- Claude Sonnet AI\n- Priority support\n\n### Enterprise - $499/month\n- 240+ tools\n- Unlimited runs\n- Claude Opus AI\n- Dedicated support\n\n**45-day money-back guarantee on all paid plans**`,
+      excerpt: 'Compare our pricing plans and find the right fit',
+      published: true,
+      featured: true,
+      views: 298,
+      helpfulVotes: 56,
+    },
+    {
+      categoryId: createdCategories[2].id,
+      title: 'How to upgrade your plan',
+      slug: 'upgrade-plan',
+      content: `## Upgrading Your Plan\n\nUpgrade anytime to access more tools and features.\n\n### Steps\n1. Go to Dashboard → Billing\n2. Click "Upgrade Plan"\n3. Select your desired tier\n4. Enter payment information\n5. Confirm upgrade\n\n### What Happens Next\n- Immediate access to new tier\n- Pro-rated billing\n- No downtime\n- Keep all your data`,
+      excerpt: 'Upgrade your subscription to unlock more features',
+      published: true,
+      views: 145,
+      helpfulVotes: 27,
+    },
+    {
+      categoryId: createdCategories[2].id,
+      title: 'Refund policy and money-back guarantee',
+      slug: 'refund-policy',
+      content: `## 45-Day Money-Back Guarantee\n\nTry Frith AI risk-free with our industry-leading guarantee.\n\n### Our Promise\nIf you're not satisfied within 45 days of your initial subscription, we'll refund your payment—no questions asked.\n\n### How to Request a Refund\n1. Contact support within 45 days\n2. Provide your reason (optional)\n3. We'll process immediately\n4. Refund appears in 5-7 business days\n\n### Terms\n- Applies to first subscription only\n- Full refund of subscription fee\n- Keep access until period ends`,
+      excerpt: 'Learn about our 45-day money-back guarantee',
+      published: true,
+      views: 112,
+      helpfulVotes: 19,
+    },
+    // Account Settings
+    {
+      categoryId: createdCategories[3].id,
+      title: 'Changing your password',
+      slug: 'change-password',
+      content: `## Changing Your Password\n\nUpdate your password anytime from account settings.\n\n### Steps\n1. Go to Dashboard → Settings\n2. Click "Security" tab\n3. Enter current password\n4. Enter new password\n5. Confirm new password\n6. Click "Update Password"\n\n### Password Requirements\n- Minimum 8 characters\n- At least one uppercase letter\n- At least one number\n- At least one special character`,
+      excerpt: 'How to update your account password',
+      published: true,
+      views: 98,
+      helpfulVotes: 15,
+    },
+    // Troubleshooting
+    {
+      categoryId: createdCategories[4].id,
+      title: 'Tool not running - Common issues',
+      slug: 'tool-not-running',
+      content: `## Troubleshooting Tool Runs\n\nIf a tool isn't running, try these solutions.\n\n### Common Issues\n\n#### 1. Quota Exceeded\n- Check your monthly limit\n- Upgrade plan if needed\n- Wait for monthly reset\n\n#### 2. Input Validation Error\n- Review required fields\n- Check character limits\n- Remove special characters\n\n#### 3. Network Issues\n- Refresh the page\n- Check internet connection\n- Try different browser\n\n#### 4. System Maintenance\n- Check status page\n- Wait a few minutes\n- Contact support if persistent`,
+      excerpt: 'Fix common issues when tools won\'t run',
+      published: true,
+      views: 87,
+      helpfulVotes: 16,
+    },
+    {
+      categoryId: createdCategories[4].id,
+      title: 'Contacting support',
+      slug: 'contact-support',
+      content: `## Getting Help from Support\n\nOur team is here to help 24/7.\n\n### Submit a Ticket\n1. Click "Support" in the header\n2. Click "Submit Ticket"\n3. Fill in the form:\n   - Subject\n   - Category\n   - Priority\n   - Detailed description\n4. Attach screenshots if helpful\n5. Submit\n\n### Response Times\n- Free: 48 hours\n- Pro: 24 hours\n- Professional: 12 hours\n- Enterprise: 4 hours\n\n### Other Options\n- Browse Help Center\n- Check System Status\n- Email: support@frithai.com`,
+      excerpt: 'How to contact support and get help',
+      published: true,
+      views: 165,
+      helpfulVotes: 29,
+    },
+  ]
+
+  for (const article of articles) {
+    await prisma.helpArticle.upsert({
+      where: { slug: article.slug },
+      update: {},
+      create: article,
+    })
+  }
+
+  console.log(`✅ Help center: ${helpCategories.length} categories, ${articles.length} articles`)
+
+  // ============================================================================
+  // VIDEO TUTORIALS
+  // ============================================================================
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('🎥 Creating video tutorials...')
+
+    const videos = [
+    {
+      title: 'Getting Started with Frith AI',
+      slug: 'getting-started-intro',
+      description: 'A complete walkthrough of the platform and your first tool run',
+      videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ', // Mock URL
+      thumbnail: null,
+      duration: 180,
+      category: 'getting-started',
+      published: true,
+      order: 1,
+    },
+    {
+      title: 'Contract Review in 60 Seconds',
+      slug: 'contract-review-demo',
+      description: 'Watch how AI analyzes a contract and identifies risks',
+      videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+      thumbnail: null,
+      duration: 90,
+      category: 'tools',
+      published: true,
+      order: 2,
+    },
+    {
+      title: 'Legal Research Made Easy',
+      slug: 'legal-research-tutorial',
+      description: 'Learn how to conduct legal research with AI assistance',
+      videoUrl: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+      thumbnail: null,
+      duration: 240,
+      category: 'tools',
+      published: true,
+      order: 3,
+    },
+  ]
+
+    for (const video of videos) {
+      await prisma.videoTutorial.upsert({
+        where: { slug: video.slug },
+        update: {},
+        create: video,
+      })
+    }
+
+    console.log(`✅ Video tutorials: ${videos.length}`)
+  }
 
   // ============================================================================
   // SUMMARY

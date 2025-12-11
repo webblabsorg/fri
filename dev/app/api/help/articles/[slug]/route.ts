@@ -8,7 +8,7 @@ export async function GET(
   try {
     const { slug } = await params
 
-    const article = await prisma.helpArticle.findUnique({
+    const article = await prisma.helpArticle.findFirst({
       where: {
         slug,
         published: true,
@@ -38,7 +38,7 @@ export async function GET(
     })
 
     // Get related articles if IDs provided
-    let relatedArticles = []
+    let relatedArticles: any[] = []
     if (article.relatedArticles && Array.isArray(article.relatedArticles)) {
       relatedArticles = await prisma.helpArticle.findMany({
         where: {

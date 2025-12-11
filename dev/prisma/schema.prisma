@@ -15,28 +15,34 @@ datasource db {
 // ============================================================================
 
 model User {
-  id                  String    @id @default(uuid())
-  name                String
-  email               String    @unique
-  emailVerified       Boolean   @default(false)
-  passwordHash        String
-  firmName            String?
-  role                String    @default("user") // user, admin, superadmin
-  subscriptionTier    String    @default("free") // free, pro, professional, enterprise
-  subscriptionStatus  String    @default("active") // active, cancelled, past_due
-  stripeCustomerId    String?   @unique
-  twoFactorEnabled    Boolean   @default(false)
-  twoFactorSecret     String?
-  status              String    @default("pending_verification") // pending_verification, active, suspended, deleted
-  marketingOptIn      Boolean   @default(false)
-  failedLoginAttempts Int       @default(0)
-  lockedUntil         DateTime?
-  onboardingCompleted Boolean   @default(false)
-  onboardingRole      String?   // Solo, Associate, Partner, In-House Counsel, etc.
-  onboardingPracticeAreas Json?  // Array of practice areas selected
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  lastLoginAt         DateTime?
+  id                      String    @id @default(uuid())
+  name                    String
+  email                   String    @unique
+  emailVerified           Boolean   @default(false)
+  passwordHash            String
+  image                   String?
+  firmName                String?
+  role                    String    @default("user") // user, admin, superadmin
+  subscriptionTier        String    @default("free") // free, pro, professional, enterprise
+  subscriptionStatus      String    @default("active") // active, cancelled, past_due
+  stripeCustomerId        String?   @unique
+  twoFactorEnabled        Boolean   @default(false)
+  twoFactorSecret         String?
+  status                  String    @default("pending_verification") // pending_verification, active, suspended, deleted
+  marketingOptIn          Boolean   @default(false)
+  failedLoginAttempts     Int       @default(0)
+  lockedUntil             DateTime?
+  onboardingCompleted     Boolean   @default(false)
+  onboardingRole          String? // Solo, Associate, Partner, In-House Counsel, etc.
+  onboardingPracticeAreas Json? // Array of practice areas selected
+  // Beta program fields
+  isBetaUser              Boolean   @default(false)
+  betaTrialEndsAt         DateTime?
+  earlyAdopter            Boolean   @default(false)
+  betaInvitedAt           DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  lastLoginAt             DateTime?
 
   // Relations
   sessions              Session[]
@@ -49,6 +55,14 @@ model User {
   favorites             Favorite[]
   templates             Template[]
   chatbotConversations  ChatbotConversation[]
+  invitationsSent       OrganizationInvitation[]     @relation("InvitationInviter")
+  invitationsAccepted   OrganizationInvitation[]     @relation("InvitationAccepter")
+  comments              Comment[]
+  notifications         Notification[]
+  activityLogs          ActivityLog[]                @relation("UserActivityLog")
+  shares                Share[]
+  createdDocuments      ProjectDocument[]            @relation("CreatedDocuments")
+  createdDocVersions    ProjectDocumentVersion[]     @relation("CreatedDocumentVersions")
 }
 
 model Session {
@@ -94,7 +108,8 @@ model PasswordReset {
 model Organization {
   id                   String   @id @default(uuid())
   name                 String
-  type                 String?  // law_firm, corporate, solo, consultant
+  description          String?
+  type                 String? // law_firm, corporate, solo, consultant
   planTier             String   @default("free") // free, pro, professional, enterprise
   subscriptionStatus   String   @default("active") // active, trialing, past_due, cancelled
   seatsTotal           Int      @default(1)
@@ -106,9 +121,10 @@ model Organization {
   updatedAt            DateTime @updatedAt
 
   // Relations
-  members    OrganizationMember[]
-  workspaces Workspace[]
-  projects   Project[]
+  members     OrganizationMember[]
+  invitations OrganizationInvitation[]
+  workspaces  Workspace[]
+  projects    Project[]
 
   @@index([status])
 }
@@ -132,12 +148,37 @@ model OrganizationMember {
   @@index([userId])
 }
 
+model OrganizationInvitation {
+  id             String    @id @default(uuid())
+  organizationId String
+  email          String
+  role           String    @default("member") // owner, admin, member, viewer
+  token          String    @unique
+  status         String    @default("pending") // pending, accepted, declined, expired
+  invitedBy      String
+  acceptedBy     String?
+  createdAt      DateTime  @default(now())
+  acceptedAt     DateTime?
+  expiresAt      DateTime
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  inviter      User         @relation("InvitationInviter", fields: [invitedBy], references: [id])
+  accepter     User?        @relation("InvitationAccepter", fields: [acceptedBy], references: [id])
+
+  @@index([organizationId])
+  @@index([email])
+  @@index([token])
+  @@index([status])
+}
+
 model Workspace {
   id             String   @id @default(uuid())
   organizationId String?
   name           String
+  description    String?
   type           String   @default("personal") // personal, team
   ownerId        String
+  isDefault      Boolean  @default(false)
   status         String   @default("active") // active, archived
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -145,6 +186,7 @@ model Workspace {
   organization Organization?     @relation(fields: [organizationId], references: [id])
   members      WorkspaceMember[]
   projects     Project[]
+  activityLogs ActivityLog[]
 
   @@index([organizationId])
   @@index([ownerId])
@@ -155,7 +197,7 @@ model WorkspaceMember {
   workspaceId String
   userId      String
   role        String   @default("member") // admin, member, viewer
-  permissions Json?    // Granular permissions for future use
+  permissions Json? // Granular permissions for future use
   createdAt   DateTime @default(now())
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -190,9 +232,9 @@ model Tool {
   slug           String   @unique
   description    String   @db.Text
   categoryId     String
-  inputType      String   // text, document, structured
-  outputType     String   // text, document, json
-  pricingTier    String   // free, pro, professional, enterprise
+  inputType      String // text, document, structured
+  outputType     String // text, document, json
+  pricingTier    String // free, pro, professional, enterprise
   aiModel        String   @default("claude-sonnet-4.5")
   popular        Boolean  @default(false)
   featured       Boolean  @default(false)
@@ -214,23 +256,23 @@ model Tool {
 }
 
 model ToolRun {
-  id               String    @id @default(uuid())
-  userId           String
-  toolId           String
-  projectId        String?
-  inputText        String    @db.Text
-  outputText       String?   @db.Text
-  status           String    @default("pending") // pending, processing, completed, failed
-  aiModelUsed      String
-  tokensUsed       Int?
-  cost             Float?
-  runTimeMs        Int?
-  errorMsg         String?   @db.Text
-  evaluationScore  Float?
-  evaluationData   Json?
-  evaluatedAt      DateTime?
-  createdAt        DateTime  @default(now())
-  completedAt      DateTime?
+  id              String    @id @default(uuid())
+  userId          String
+  toolId          String
+  projectId       String?
+  inputText       String    @db.Text
+  outputText      String?   @db.Text
+  status          String    @default("pending") // pending, processing, completed, failed
+  aiModelUsed     String
+  tokensUsed      Int?
+  cost            Float?
+  runTimeMs       Int?
+  errorMsg        String?   @db.Text
+  evaluationScore Float?
+  evaluationData  Json?
+  evaluatedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  completedAt     DateTime?
 
   user    User     @relation(fields: [userId], references: [id])
   tool    Tool     @relation(fields: [toolId], references: [id])
@@ -261,9 +303,9 @@ model Template {
   toolId      String
   name        String
   description String?  @db.Text
-  content     Json     // Stores the form data/input
+  content     Json // Stores the form data/input
   isPublic    Boolean  @default(false)
-  category    String?  // e.g., "Contracts", "Litigation", "Corporate"
+  category    String? // e.g., "Contracts", "Litigation", "Corporate"
   useCount    Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -291,15 +333,62 @@ model Project {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization? @relation(fields: [organizationId], references: [id])
-  workspace    Workspace?    @relation(fields: [workspaceId], references: [id])
-  creator      User          @relation(fields: [createdBy], references: [id])
+  organization Organization?     @relation(fields: [organizationId], references: [id])
+  workspace    Workspace?        @relation(fields: [workspaceId], references: [id])
+  creator      User              @relation(fields: [createdBy], references: [id])
   runs         ToolRun[]
+  documents    ProjectDocument[]
 
   @@index([organizationId])
   @@index([workspaceId])
   @@index([createdBy])
   @@index([status])
+}
+
+model ProjectDocument {
+  id               String   @id @default(uuid())
+  projectId        String
+  workspaceId      String?
+  organizationId   String?
+  name             String
+  description      String?  @db.Text
+  originalFileName String
+  storageKey       String // S3/Blob storage key
+  mimeType         String
+  sizeBytes        Int
+  status           String   @default("uploaded") // uploaded, processed, failed
+  createdById      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  project  Project                  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator  User                     @relation("CreatedDocuments", fields: [createdById], references: [id])
+  versions ProjectDocumentVersion[]
+
+  @@index([projectId])
+  @@index([workspaceId])
+  @@index([organizationId])
+  @@index([createdById])
+  @@index([status])
+}
+
+model ProjectDocumentVersion {
+  id            String   @id @default(uuid())
+  documentId    String
+  versionNumber Int
+  storageKey    String // S3/Blob storage key for this version
+  mimeType      String
+  sizeBytes     Int
+  changelog     String?  @db.Text
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  document ProjectDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  creator  User            @relation("CreatedDocumentVersions", fields: [createdById], references: [id])
+
+  @@unique([documentId, versionNumber])
+  @@index([documentId])
+  @@index([createdById])
 }
 
 // ============================================================================
@@ -315,23 +404,28 @@ model SupportTicket {
   priority     String    @default("medium") // low, medium, high, urgent
   status       String    @default("open") // open, in_progress, waiting_on_customer, resolved, closed
   assignedTo   String?
+  attachments  Json? // Array of {name, url, size, type}
+  mergedIntoId String? // For ticket merging
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   resolvedAt   DateTime?
 
-  user     User            @relation(fields: [userId], references: [id])
-  messages TicketMessage[]
+  user          User            @relation(fields: [userId], references: [id])
+  messages      TicketMessage[]
+  mergedInto    SupportTicket?  @relation("TicketMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedTickets SupportTicket[] @relation("TicketMerge")
 
   @@index([userId])
   @@index([status])
   @@index([ticketNumber])
+  @@index([mergedIntoId])
 }
 
 model TicketMessage {
   id         String   @id @default(uuid())
   ticketId   String
   senderId   String
-  senderType String   // user, admin, system
+  senderType String // user, admin, system
   message    String   @db.Text
   createdAt  DateTime @default(now())
 
@@ -341,55 +435,17 @@ model TicketMessage {
 }
 
 // ============================================================================
-// AI CHATBOT
-// ============================================================================
-
-model ChatbotConversation {
-  id          String   @id @default(uuid())
-  userId      String?
-  visitorId   String? // For anonymous visitors
-  email       String?
-  name        String?
-  phone       String?
-  status      String   @default("active") // active, converted, closed
-  source      String   @default("website") // website, dashboard
-  leadCaptured Boolean @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user     User?            @relation(fields: [userId], references: [id])
-  messages ChatbotMessage[]
-
-  @@index([userId])
-  @@index([visitorId])
-  @@index([status])
-}
-
-model ChatbotMessage {
-  id             String   @id @default(uuid())
-  conversationId String
-  role           String   // user, assistant, system
-  message        String   @db.Text
-  metadata       Json?    // Store additional context
-  createdAt      DateTime @default(now())
-
-  conversation ChatbotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-
-  @@index([conversationId])
-}
-
-// ============================================================================
 // AUDIT LOGS & ANALYTICS
 // ============================================================================
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  userId     String?
-  eventType  String   // login, logout, tool_run, subscription_change, etc.
-  eventData  Json?
-  ipAddress  String?
-  userAgent  String?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  userId    String?
+  eventType String // login, logout, tool_run, subscription_change, etc.
+  eventData Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
 
@@ -403,17 +459,17 @@ model AuditLog {
 // ============================================================================
 
 model Transaction {
-  id                String   @id @default(uuid())
-  userId            String
-  organizationId    String?
-  amount            Float
-  currency          String   @default("USD")
-  status            String   // pending, completed, failed, refunded
-  type              String   // subscription, one_time
-  stripePaymentId   String?  @unique
-  paypalTransactionId String? @unique
-  metadata          Json?
-  createdAt         DateTime @default(now())
+  id                  String   @id @default(uuid())
+  userId              String
+  organizationId      String?
+  amount              Float
+  currency            String   @default("USD")
+  status              String // pending, completed, failed, refunded
+  type                String // subscription, one_time
+  stripePaymentId     String?  @unique
+  paypalTransactionId String?  @unique
+  metadata            Json?
+  createdAt           DateTime @default(now())
 
   @@index([userId])
   @@index([organizationId])
@@ -421,13 +477,13 @@ model Transaction {
 }
 
 model Refund {
-  id            String   @id @default(uuid())
+  id            String    @id @default(uuid())
   transactionId String
   userId        String
   amount        Float
-  reason        String?  @db.Text
-  status        String   @default("pending") // pending, approved, rejected, processed
-  requestedAt   DateTime @default(now())
+  reason        String?   @db.Text
+  status        String    @default("pending") // pending, approved, rejected, processed
+  requestedAt   DateTime  @default(now())
   processedAt   DateTime?
 
   @@index([userId])
@@ -457,25 +513,25 @@ model HelpCategory {
 }
 
 model HelpArticle {
-  id          String   @id @default(uuid())
-  categoryId  String
-  title       String
-  slug        String   @unique
-  content     String   @db.Text
-  excerpt     String?
-  author      String   @default("Frith AI Team")
-  tags        Json?
-  published   Boolean  @default(true)
-  featured    Boolean  @default(false)
-  views       Int      @default(0)
-  helpfulVotes Int     @default(0)
-  notHelpfulVotes Int  @default(0)
-  videoUrl    String?
+  id              String   @id @default(uuid())
+  categoryId      String
+  title           String
+  slug            String   @unique
+  content         String   @db.Text
+  excerpt         String?
+  author          String   @default("Frith AI Team")
+  tags            Json?
+  published       Boolean  @default(true)
+  featured        Boolean  @default(false)
+  views           Int      @default(0)
+  helpfulVotes    Int      @default(0)
+  notHelpfulVotes Int      @default(0)
+  videoUrl        String?
   relatedArticles Json?
-  seoTitle    String?
-  seoDescription String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  seoTitle        String?
+  seoDescription  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   category HelpCategory @relation(fields: [categoryId], references: [id])
 
@@ -507,19 +563,19 @@ model VideoTutorial {
 }
 
 model Feedback {
-  id          String   @id @default(uuid())
-  userId      String?
-  type        String   // general, feature_request, bug_report
-  category    String?
-  subject     String
-  message     String   @db.Text
-  rating      Int?
-  page        String?
-  userAgent   String?
-  status      String   @default("new") // new, reviewing, planned, implemented, declined
-  adminNotes  String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id         String   @id @default(uuid())
+  userId     String?
+  type       String // general, feature_request, bug_report
+  category   String?
+  subject    String
+  message    String   @db.Text
+  rating     Int?
+  page       String?
+  userAgent  String?
+  status     String   @default("new") // new, reviewing, planned, implemented, declined
+  adminNotes String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([userId])
   @@index([type])
@@ -531,18 +587,18 @@ model Feedback {
 // ============================================================================
 
 model SystemIncident {
-  id          String   @id @default(uuid())
-  title       String
-  description String   @db.Text
-  status      String   // investigating, identified, monitoring, resolved
-  severity    String   // minor, major, critical
+  id               String    @id @default(uuid())
+  title            String
+  description      String    @db.Text
+  status           String // investigating, identified, monitoring, resolved
+  severity         String // minor, major, critical
   affectedServices Json?
-  startedAt   DateTime
-  resolvedAt  DateTime?
-  updates     Json?    // Array of incident updates
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  startedAt        DateTime
+  resolvedAt       DateTime?
+  updates          Json? // Array of incident updates
+  createdBy        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@index([status])
   @@index([severity])
@@ -550,16 +606,1028 @@ model SystemIncident {
 }
 
 model MaintenanceWindow {
-  id          String   @id @default(uuid())
-  title       String
-  description String   @db.Text
-  scheduledStart DateTime
-  scheduledEnd   DateTime
+  id               String   @id @default(uuid())
+  title            String
+  description      String   @db.Text
+  scheduledStart   DateTime
+  scheduledEnd     DateTime
   affectedServices Json?
-  status      String   @default("scheduled") // scheduled, in_progress, completed, cancelled
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status           String   @default("scheduled") // scheduled, in_progress, completed, cancelled
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@index([scheduledStart])
   @@index([status])
+}
+
+// ============================================================================
+// HELP CENTER SEARCH ANALYTICS
+// ============================================================================
+
+model HelpSearchQuery {
+  id           String   @id @default(uuid())
+  query        String
+  resultsCount Int
+  userId       String?
+  createdAt    DateTime @default(now())
+
+  @@index([query])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// AI CHATBOT SYSTEM
+// ============================================================================
+
+model ChatbotConversation {
+  id              String    @id @default(uuid())
+  userId          String? // null if anonymous
+  sessionId       String    @unique
+  pageUrl         String?
+  userAgent       String?
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  leadCaptured    Boolean   @default(false)
+  emailCaptured   String?
+  converted       Boolean   @default(false) // signup or upgrade
+  escalated       Boolean   @default(false)
+  sentiment       String? // positive, neutral, negative
+  feedback        String? // helpful, not_helpful
+  feedbackComment String?
+
+  user     User?            @relation(fields: [userId], references: [id])
+  messages ChatbotMessage[]
+  leads    ChatbotLead[]
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([startedAt])
+  @@index([leadCaptured])
+  @@index([converted])
+}
+
+model ChatbotMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  senderType     String // user, bot, admin
+  senderId       String? // user_id or admin_user_id
+  message        String
+  intent         String? // classified intent (pricing, support, demo, etc.)
+  attachments    Json?
+  createdAt      DateTime @default(now())
+
+  conversation ChatbotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderType])
+  @@index([createdAt])
+}
+
+model ChatbotLead {
+  id             String   @id @default(uuid())
+  conversationId String
+  email          String
+  name           String?
+  company        String?
+  role           String?
+  firmSize       String?
+  practiceAreas  Json?
+  leadScore      String? // high, medium, low
+  sourcePage     String?
+  createdAt      DateTime @default(now())
+
+  conversation ChatbotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([email])
+  @@index([leadScore])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// COLLABORATION FEATURES
+// ============================================================================
+
+model Comment {
+  id         String   @id @default(uuid())
+  content    String
+  authorId   String
+  targetType String // tool_run, project, document
+  targetId   String
+  parentId   String? // for threaded comments
+  mentions   Json? // array of user IDs mentioned
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent   Comment?  @relation("CommentThread", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentThread")
+
+  @@index([targetType, targetId])
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  userId     String
+  type       String // mention, comment, share, invite
+  title      String
+  message    String
+  data       Json? // additional context data
+  read       Boolean  @default(false)
+  actionUrl  String?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([read])
+  @@index([createdAt])
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  userId      String
+  workspaceId String?
+  action      String // created, updated, shared, commented
+  targetType  String // tool_run, project, workspace, comment
+  targetId    String
+  description String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  user      User       @relation("UserActivityLog", fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([userId])
+  @@index([workspaceId])
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}
+
+model Share {
+  id          String    @id @default(uuid())
+  ownerId     String
+  targetType  String // tool_run, project, document
+  targetId    String
+  shareType   String // public, workspace, specific_users
+  shareWith   Json? // array of user IDs for specific_users type
+  permissions Json? // read, write, comment
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([targetType, targetId])
+  @@index([shareType])
+}
+
+// ============================================================================
+// INTEGRATIONS
+// ============================================================================
+
+model ClioConnection {
+  id           String   @id @default(uuid())
+  userId       String
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  scopes       Json? // Array of OAuth scopes
+  clioUserId   String?
+  clioFirmId   String?
+  status       String   @default("active") // active, revoked, expired
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model HubSpotConnection {
+  id           String   @id @default(uuid())
+  userId       String
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  portalId     String?
+  status       String   @default("active") // active, revoked, expired
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
+model ZapierEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  eventType String // tool_run_created, tool_run_completed, project_created
+  payload   Json
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([consumed])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// WORKFLOWS & AUTOMATION
+// ============================================================================
+
+model Workflow {
+  id             String   @id @default(uuid())
+  workspaceId    String?
+  organizationId String?
+  name           String
+  description    String?  @db.Text
+  status         String   @default("draft") // draft, active, archived
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  steps WorkflowStep[]
+  runs  WorkflowRun[]
+
+  @@index([workspaceId])
+  @@index([organizationId])
+  @@index([createdById])
+  @@index([status])
+}
+
+model WorkflowStep {
+  id               String  @id @default(uuid())
+  workflowId       String
+  order            Int
+  toolId           String
+  name             String?
+  config           Json // Input configuration and mappings
+  waitForPrevious  Boolean @default(true)
+  continueOnError  Boolean @default(false)
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, order])
+  @@index([workflowId])
+  @@index([toolId])
+}
+
+model WorkflowRun {
+  id          String    @id @default(uuid())
+  workflowId  String
+  userId      String
+  status      String    @default("pending") // pending, running, completed, failed
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  errorMsg    String?   @db.Text
+  results     Json? // Outputs from all steps
+
+  workflow Workflow @relation(fields: [workflowId], references: [id])
+
+  @@index([workflowId])
+  @@index([userId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// ============================================================================
+// SCHEDULED RUNS
+// ============================================================================
+
+model ScheduledJob {
+  id             String    @id @default(uuid())
+  workspaceId    String?
+  organizationId String?
+  type           String // tool, workflow
+  toolId         String?
+  workflowId     String?
+  name           String
+  description    String?   @db.Text
+  cronExpression String? // Cron format for scheduling
+  frequency      String? // daily, weekly, monthly (alternative to cron)
+  timezone       String    @default("UTC")
+  config         Json // Tool/workflow input configuration
+  enabled        Boolean   @default(true)
+  nextRunAt      DateTime?
+  lastRunAt      DateTime?
+  lastStatus     String? // completed, failed
+  emailResults   Boolean   @default(false)
+  emailTo        Json? // Array of email addresses
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([organizationId])
+  @@index([type])
+  @@index([enabled])
+  @@index([nextRunAt])
+}
+
+// ============================================================================
+// BULK PROCESSING
+// ============================================================================
+
+model BulkJob {
+  id             String    @id @default(uuid())
+  workspaceId    String?
+  organizationId String?
+  name           String
+  toolId         String
+  config         Json // Tool configuration
+  status         String    @default("pending") // pending, processing, completed, failed, cancelled
+  inputZipKey    String // Storage key for input ZIP
+  outputZipKey   String? // Storage key for results ZIP
+  totalFiles     Int
+  processedFiles Int       @default(0)
+  failedFiles    Int       @default(0)
+  errorMsg       String?   @db.Text
+  createdById    String
+  createdAt      DateTime  @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  files BulkFile[]
+
+  @@index([workspaceId])
+  @@index([organizationId])
+  @@index([toolId])
+  @@index([status])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+model BulkFile {
+  id         String    @id @default(uuid())
+  bulkJobId  String
+  fileName   String
+  status     String    @default("pending") // pending, processing, completed, failed
+  inputKey   String? // Storage key for input file
+  outputKey  String? // Storage key for output file
+  errorMsg   String?   @db.Text
+  processedAt DateTime?
+
+  bulkJob BulkJob @relation(fields: [bulkJobId], references: [id], onDelete: Cascade)
+
+  @@index([bulkJobId])
+  @@index([status])
+}
+
+// ============================================================================
+// SYSTEM SETTINGS
+// ============================================================================
+
+model SystemSetting {
+  key       String   @id
+  value     String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================================
+// MARKETING & LAUNCH
+// ============================================================================
+
+model WaitlistEntry {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  source    String?  // where they signed up from (homepage, product_hunt, etc.)
+  status    String   @default("pending") // pending, invited, converted
+  invitedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BlogPost {
+  id          String    @id @default(uuid())
+  slug        String    @unique
+  title       String
+  excerpt     String?   @db.Text
+  content     String    @db.Text
+  coverImage  String?
+  authorId    String?
+  status      String    @default("draft") // draft, scheduled, published
+  publishedAt DateTime?
+  scheduledAt DateTime?
+  tags        Json?     // Array of tags
+  seoTitle    String?
+  seoDescription String? @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([publishedAt])
+  @@index([slug])
+}
+
+model SocialPost {
+  id          String    @id @default(uuid())
+  platform    String    // twitter, linkedin, facebook
+  content     String    @db.Text
+  mediaUrl    String?
+  status      String    @default("draft") // draft, scheduled, published, failed
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  externalId  String?   // ID from the social platform
+  errorMsg    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([platform])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+model LaunchMetric {
+  id        String   @id @default(uuid())
+  date      DateTime @db.Date
+  signups   Int      @default(0)
+  toolRuns  Int      @default(0)
+  activeUsers Int    @default(0)
+  conversions Int    @default(0)
+  revenue   Float    @default(0)
+  errorRate Float    @default(0)
+  avgResponseTime Float @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
+  @@index([date])
+}
+
+// ============================================================================
+// PHASE 11: ENTERPRISE SSO & IDENTITY
+// ============================================================================
+
+model SSOConfig {
+  id               String   @id @default(uuid())
+  organizationId   String   @unique
+  provider         String   // saml, oauth, azure_ad, okta
+  enabled          Boolean  @default(false)
+  // SAML Configuration
+  samlEntityId     String?
+  samlSsoUrl       String?
+  samlCertificate  String?  @db.Text
+  samlSignRequest  Boolean  @default(false)
+  // OAuth Configuration
+  oauthClientId    String?
+  oauthClientSecret String?
+  oauthAuthUrl     String?
+  oauthTokenUrl    String?
+  oauthUserInfoUrl String?
+  oauthScopes      String?
+  // Azure AD / Okta specific
+  tenantId         String?
+  domain           String?
+  // Settings
+  autoProvision    Boolean  @default(true) // Auto-create users on first login
+  defaultRole      String   @default("member")
+  enforceSSO       Boolean  @default(false) // Require SSO for all users
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([provider])
+}
+
+model SSOSession {
+  id             String   @id @default(uuid())
+  userId         String
+  organizationId String
+  ssoConfigId    String
+  sessionToken   String   @unique
+  idpSessionId   String?  // Session ID from identity provider
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([sessionToken])
+}
+
+// ============================================================================
+// PHASE 11: ADVANCED SECURITY
+// ============================================================================
+
+model IPWhitelist {
+  id             String   @id @default(uuid())
+  organizationId String
+  ipAddress      String   // Can be CIDR notation (e.g., 192.168.1.0/24)
+  description    String?
+  enabled        Boolean  @default(true)
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, ipAddress])
+  @@index([organizationId])
+}
+
+model DataRetentionPolicy {
+  id             String   @id @default(uuid())
+  organizationId String   @unique
+  toolRunsRetention Int   @default(365) // Days to retain tool runs
+  auditLogsRetention Int  @default(730) // Days to retain audit logs
+  documentsRetention Int  @default(365) // Days to retain documents
+  autoDelete     Boolean  @default(false)
+  lastCleanupAt  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+}
+
+model EnhancedAuditLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String?
+  eventType      String   // login, logout, tool_run, data_export, settings_change, etc.
+  eventCategory  String   // security, data, admin, user
+  resourceType   String?  // user, tool, document, organization
+  resourceId     String?
+  action         String   // create, read, update, delete, export
+  details        Json?
+  ipAddress      String?
+  userAgent      String?
+  geoLocation    String?
+  riskLevel      String   @default("low") // low, medium, high, critical
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([eventType])
+  @@index([eventCategory])
+  @@index([riskLevel])
+  @@index([createdAt])
+}
+
+// ============================================================================
+// PHASE 11: CUSTOM BRANDING / WHITE-LABEL
+// ============================================================================
+
+model OrganizationBranding {
+  id               String   @id @default(uuid())
+  organizationId   String   @unique
+  // Domain
+  customDomain     String?  @unique // e.g., ai.lawfirm.com
+  domainVerified   Boolean  @default(false)
+  domainVerifyToken String?
+  // Logo & Colors
+  logoUrl          String?
+  logoLightUrl     String?  // For dark backgrounds
+  faviconUrl       String?
+  primaryColor     String   @default("#3B82F6")
+  secondaryColor   String   @default("#6366F1")
+  accentColor      String   @default("#10B981")
+  // Text
+  companyName      String?  // Override "Frith AI"
+  tagline          String?
+  supportEmail     String?
+  // Features
+  hideFooterBranding Boolean @default(false)
+  customCss        String?  @db.Text
+  customJs         String?  @db.Text
+  // Email branding
+  emailFromName    String?
+  emailHeaderHtml  String?  @db.Text
+  emailFooterHtml  String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([customDomain])
+}
+
+// ============================================================================
+// PHASE 11: ADVANCED ANALYTICS & REPORTING
+// ============================================================================
+
+model CustomReport {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  reportType     String   // usage, billing, compliance, custom
+  config         Json     // Report configuration (filters, columns, etc.)
+  schedule       String?  // cron expression for scheduled reports
+  lastRunAt      DateTime?
+  recipients     Json?    // Array of email addresses
+  format         String   @default("pdf") // pdf, csv, xlsx
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([reportType])
+  @@index([createdById])
+}
+
+model ReportExport {
+  id             String   @id @default(uuid())
+  reportId       String?
+  organizationId String
+  exportType     String   // full_data, usage, billing, audit
+  format         String   // csv, xlsx, json, pdf
+  status         String   @default("pending") // pending, processing, completed, failed
+  fileUrl        String?
+  fileSize       Int?
+  rowCount       Int?
+  filters        Json?
+  requestedById  String
+  errorMsg       String?
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+  expiresAt      DateTime?
+
+  @@index([organizationId])
+  @@index([reportId])
+  @@index([status])
+  @@index([requestedById])
+}
+
+model UsageAnalytics {
+  id             String   @id @default(uuid())
+  organizationId String
+  date           DateTime @db.Date
+  // Tool usage
+  toolRuns       Int      @default(0)
+  uniqueUsers    Int      @default(0)
+  tokensUsed     Int      @default(0)
+  aiCost         Float    @default(0)
+  // By category breakdown (JSON)
+  byCategory     Json?
+  byTool         Json?
+  byUser         Json?
+  // Performance
+  avgRunTime     Float?
+  errorRate      Float?
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, date])
+  @@index([organizationId])
+  @@index([date])
+}
+
+// ============================================================================
+// PHASE 11: INTEGRATIONS
+// ============================================================================
+
+model Integration {
+  id             String   @id @default(uuid())
+  organizationId String
+  type           String   // google_docs, imanage, netdocuments, slack, teams, dropbox, onedrive
+  name           String
+  enabled        Boolean  @default(true)
+  // OAuth tokens
+  accessToken    String?  @db.Text
+  refreshToken   String?  @db.Text
+  tokenExpiresAt DateTime?
+  // Configuration
+  config         Json?    // Integration-specific settings
+  webhookUrl     String?
+  webhookSecret  String?
+  // Status
+  status         String   @default("connected") // connected, disconnected, error
+  lastSyncAt     DateTime?
+  errorMsg       String?
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, type])
+  @@index([organizationId])
+  @@index([type])
+  @@index([status])
+}
+
+model IntegrationSync {
+  id            String   @id @default(uuid())
+  integrationId String
+  direction     String   // import, export, bidirectional
+  resourceType  String   // document, folder, message
+  resourceId    String?
+  externalId    String?
+  status        String   @default("pending") // pending, syncing, completed, failed
+  errorMsg      String?
+  createdAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  @@index([integrationId])
+  @@index([status])
+}
+
+// ============================================================================
+// PHASE 11: API MARKETPLACE
+// ============================================================================
+
+model APIKey {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  keyHash        String   @unique // Hashed API key
+  keyPrefix      String   // First 8 chars for identification (e.g., "fri_live_")
+  permissions    Json     // Array of allowed endpoints/scopes
+  rateLimit      Int      @default(1000) // Requests per hour
+  enabled        Boolean  @default(true)
+  lastUsedAt     DateTime?
+  usageCount     Int      @default(0)
+  expiresAt      DateTime?
+  createdById    String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([keyHash])
+  @@index([keyPrefix])
+}
+
+model APIUsage {
+  id             String   @id @default(uuid())
+  apiKeyId       String
+  organizationId String
+  endpoint       String
+  method         String
+  statusCode     Int
+  responseTimeMs Int
+  requestSize    Int?
+  responseSize   Int?
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  @@index([apiKeyId])
+  @@index([organizationId])
+  @@index([endpoint])
+  @@index([createdAt])
+}
+
+model MarketplaceTool {
+  id             String   @id @default(uuid())
+  developerId    String   // Organization ID of the developer
+  name           String
+  slug           String   @unique
+  description    String   @db.Text
+  longDescription String? @db.Text
+  category       String
+  icon           String?
+  screenshots    Json?    // Array of screenshot URLs
+  pricing        String   // free, paid, freemium
+  pricePerRun    Float?
+  monthlyPrice   Float?
+  // Technical
+  apiEndpoint    String?
+  webhookUrl     String?
+  inputSchema    Json?    // JSON Schema for input
+  outputSchema   Json?    // JSON Schema for output
+  // Status
+  status         String   @default("draft") // draft, pending_review, approved, rejected, published
+  reviewNotes    String?  @db.Text
+  publishedAt    DateTime?
+  // Stats
+  installCount   Int      @default(0)
+  rating         Float?
+  reviewCount    Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  installations MarketplaceInstall[]
+
+  @@index([developerId])
+  @@index([slug])
+  @@index([category])
+  @@index([status])
+}
+
+model MarketplaceInstall {
+  id             String   @id @default(uuid())
+  toolId         String
+  organizationId String
+  installedById  String
+  enabled        Boolean  @default(true)
+  config         Json?    // Organization-specific configuration
+  createdAt      DateTime @default(now())
+
+  tool MarketplaceTool @relation(fields: [toolId], references: [id])
+
+  @@unique([toolId, organizationId])
+  @@index([toolId])
+  @@index([organizationId])
+}
+
+// ============================================================================
+// PHASE 11: COMMUNITY FEATURES
+// ============================================================================
+
+model ForumCategory {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  icon        String?
+  sortOrder   Int      @default(0)
+  isPrivate   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  topics ForumTopic[]
+
+  @@index([slug])
+}
+
+model ForumTopic {
+  id          String   @id @default(uuid())
+  categoryId  String
+  authorId    String
+  title       String
+  content     String   @db.Text
+  isPinned    Boolean  @default(false)
+  isLocked    Boolean  @default(false)
+  viewCount   Int      @default(0)
+  replyCount  Int      @default(0)
+  lastReplyAt DateTime?
+  lastReplyById String?
+  status      String   @default("open") // open, closed, resolved
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category ForumCategory @relation(fields: [categoryId], references: [id])
+  replies  ForumReply[]
+
+  @@index([categoryId])
+  @@index([authorId])
+  @@index([isPinned])
+  @@index([createdAt])
+}
+
+model ForumReply {
+  id         String   @id @default(uuid())
+  topicId    String
+  authorId   String
+  content    String   @db.Text
+  isAccepted Boolean  @default(false) // Marked as answer
+  upvotes    Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  topic ForumTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+  @@index([authorId])
+}
+
+model LiveChatSession {
+  id             String    @id @default(uuid())
+  visitorId      String?   // For anonymous visitors
+  userId         String?   // For logged-in users
+  organizationId String?
+  agentId        String?   // Assigned support agent
+  status         String    @default("waiting") // waiting, active, closed
+  channel        String    @default("web") // web, mobile, widget
+  // Handoff from AI chatbot
+  handoffFrom    String?   // chatbot conversation ID
+  handoffReason  String?
+  // Timing
+  startedAt      DateTime  @default(now())
+  firstResponseAt DateTime?
+  closedAt       DateTime?
+  // Rating
+  rating         Int?
+  feedback       String?
+  createdAt      DateTime  @default(now())
+
+  messages LiveChatMessage[]
+
+  @@index([userId])
+  @@index([agentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model LiveChatMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  senderId  String?  // User ID or agent ID
+  senderType String  // visitor, user, agent, system
+  content   String   @db.Text
+  attachments Json?  // Array of attachment URLs
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  session LiveChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+model SupportAgent {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  displayName    String
+  avatar         String?
+  status         String   @default("offline") // online, away, busy, offline
+  maxConcurrent  Int      @default(5) // Max concurrent chats
+  currentChats   Int      @default(0)
+  skills         Json?    // Array of skill tags
+  languages      Json?    // Array of languages
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status])
+}
+
+// ============================================================================
+// PHASE 11: TOOL EXPANSION TRACKING
+// ============================================================================
+
+model ToolWave {
+  id          String   @id @default(uuid())
+  waveNumber  Int      @unique
+  name        String
+  description String?
+  targetCount Int      // Target number of tools
+  startDate   DateTime?
+  endDate     DateTime?
+  status      String   @default("planned") // planned, in_progress, completed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tools ToolExpansion[]
+
+  @@index([status])
+}
+
+model ToolExpansion {
+  id              String   @id @default(uuid())
+  waveId          String
+  toolId          String?  // Link to actual Tool once created
+  name            String
+  category        String
+  priority        Int      @default(0)
+  status          String   @default("planned") // planned, in_development, testing, deployed
+  // From ai-agents.md spec
+  specSource      String?  // Reference to spec document
+  complexity      String   @default("medium") // low, medium, high
+  estimatedHours  Int?
+  // Development tracking
+  assignedTo      String?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  // Evaluation
+  evaluationScore Float?
+  evaluationPassed Boolean @default(false)
+  evaluationNotes String?  @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  wave ToolWave @relation(fields: [waveId], references: [id])
+
+  @@index([waveId])
+  @@index([toolId])
+  @@index([status])
+  @@index([category])
+}
+
+// ============================================================================
+// PHASE 11: MOBILE APP SUPPORT
+// ============================================================================
+
+model MobileDevice {
+  id           String   @id @default(uuid())
+  userId       String
+  deviceId     String   @unique // Unique device identifier
+  platform     String   // ios, android
+  model        String?
+  osVersion    String?
+  appVersion   String?
+  pushToken    String?  // FCM/APNs token
+  pushEnabled  Boolean  @default(true)
+  lastActiveAt DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([platform])
+}
+
+model PushNotification {
+  id          String   @id @default(uuid())
+  userId      String
+  deviceId    String?
+  title       String
+  body        String
+  data        Json?    // Custom payload
+  status      String   @default("pending") // pending, sent, delivered, failed
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  errorMsg    String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([deviceId])
+  @@index([status])
+  @@index([createdAt])
 }
