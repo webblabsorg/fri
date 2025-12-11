@@ -170,16 +170,18 @@ export async function createSession(userId: string): Promise<string> {
 }
 
 export async function getSessionUser(sessionToken: string) {
-  const session = await prisma.session.findUnique({
-    where: { sessionToken },
-    include: { user: true },
-  })
-
-  if (!session || session.expiresAt < new Date()) {
+  // Verify JWT token
+  const decoded = verifyToken(sessionToken)
+  if (!decoded || !decoded.userId) {
     return null
   }
 
-  return session.user
+  // Get user from database
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.userId },
+  })
+
+  return user
 }
 
 export async function deleteSession(sessionToken: string): Promise<void> {
