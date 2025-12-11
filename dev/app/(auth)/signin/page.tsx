@@ -68,6 +68,7 @@ export default function SignInPage() {
       if (data.success && data.user) {
         // Small delay to ensure cookie is set, then redirect
         setTimeout(() => {
+          // Redirect to dashboard on the same domain/subdomain
           window.location.href = '/dashboard'
         }, 100)
       } else {

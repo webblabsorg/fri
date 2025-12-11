@@ -76,7 +76,16 @@ async function checkSSORequired(userId: string): Promise<{
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    let body
+    try {
+      body = await request.json()
+    } catch (jsonError) {
+      console.error('JSON parsing error:', jsonError)
+      return NextResponse.json(
+        { error: 'Invalid request format' },
+        { status: 400 }
+      )
+    }
 
     // Validate input
     const validationResult = signInSchema.safeParse(body)
@@ -228,6 +237,7 @@ export async function POST(request: NextRequest) {
       sameSite: 'lax',
       maxAge: rememberMe ? 30 * 24 * 60 * 60 : 24 * 60 * 60, // 30 days or 1 day
       path: '/',
+      domain: process.env.NODE_ENV === 'production' ? '.frithai.com' : undefined,
     })
 
     return response
