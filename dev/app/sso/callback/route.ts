@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
         organizationId,
         userId: user.id,
         eventType: 'user_provisioned_sso',
-        eventCategory: 'user_management',
+        eventCategory: 'admin',
         action: 'create',
         details: { email: user.email, provider: ssoConfig.provider },
       })
@@ -130,8 +130,8 @@ export async function GET(request: NextRequest) {
       organizationId,
       userId: user.id,
       eventType: 'sso_login',
-      eventCategory: 'authentication',
-      action: 'create',
+      eventCategory: 'security',
+      action: 'login',
       details: { provider: ssoConfig.provider },
     })
 
