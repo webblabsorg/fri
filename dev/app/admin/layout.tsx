@@ -139,13 +139,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <div className="flex">
         {/* Sidebar */}
-        <aside className="w-64 bg-gray-900 text-white min-h-screen">
+        <aside className="w-64 bg-gray-900 text-white min-h-screen relative">
           <div className="p-6">
             <h1 className="text-2xl font-bold mb-1">Frith AI</h1>
             <p className="text-xs text-gray-400">Admin Dashboard</p>
           </div>
 
-          <nav className="px-3">
+          <nav className="px-3 pb-24">
             {navigation.map((item) => {
               const Icon = item.icon
               const isActive = pathname === item.href
