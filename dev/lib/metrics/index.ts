@@ -178,8 +178,6 @@ export async function updateUsageAnalytics(
   data: {
     toolRuns?: number
     tokensUsed?: number
-    documentsProcessed?: number
-    apiCalls?: number
     cost?: number
   }
 ): Promise<void> {
@@ -197,19 +195,14 @@ export async function updateUsageAnalytics(
       update: {
         toolRuns: { increment: data.toolRuns || 0 },
         tokensUsed: { increment: data.tokensUsed || 0 },
-        documentsProcessed: { increment: data.documentsProcessed || 0 },
-        apiCalls: { increment: data.apiCalls || 0 },
-        totalCost: { increment: data.cost || 0 },
+        aiCost: { increment: data.cost || 0 },
       },
       create: {
         organizationId,
         date: today,
         toolRuns: data.toolRuns || 0,
         tokensUsed: data.tokensUsed || 0,
-        documentsProcessed: data.documentsProcessed || 0,
-        apiCalls: data.apiCalls || 0,
-        totalCost: data.cost || 0,
-        activeUsers: 0,
+        aiCost: data.cost || 0,
       },
     })
   } catch (error) {
@@ -229,10 +222,7 @@ export async function recordActiveUser(
 
   try {
     // Use a simple approach: increment if this is the first activity today
-    const key = `active_user:${organizationId}:${userId}:${today.toISOString().split('T')[0]}`
-    
-    // Check if already recorded today (using a simple in-memory cache or Redis in production)
-    // For now, we'll just increment - in production, use Redis SET with NX
+    // In production, use Redis SET with NX to avoid double-counting
     await prisma.usageAnalytics.upsert({
       where: {
         organizationId_date: {
@@ -241,17 +231,15 @@ export async function recordActiveUser(
         },
       },
       update: {
-        activeUsers: { increment: 1 },
+        uniqueUsers: { increment: 1 },
       },
       create: {
         organizationId,
         date: today,
-        activeUsers: 1,
+        uniqueUsers: 1,
         toolRuns: 0,
         tokensUsed: 0,
-        documentsProcessed: 0,
-        apiCalls: 0,
-        totalCost: 0,
+        aiCost: 0,
       },
     })
   } catch (error) {
@@ -411,7 +399,7 @@ export async function getToolUsageBreakdown(
 export async function getUsageTrend(
   organizationId: string,
   days: number = 30
-): Promise<Array<{ date: string; toolRuns: number; activeUsers: number; cost: number }>> {
+): Promise<Array<{ date: string; toolRuns: number; uniqueUsers: number; cost: number }>> {
   const since = new Date()
   since.setDate(since.getDate() - days)
 
@@ -427,8 +415,8 @@ export async function getUsageTrend(
     return analytics.map(a => ({
       date: a.date.toISOString().split('T')[0],
       toolRuns: a.toolRuns,
-      activeUsers: a.activeUsers,
-      cost: a.totalCost,
+      uniqueUsers: a.uniqueUsers,
+      cost: a.aiCost,
     }))
   } catch (error) {
     console.error('Usage trend error:', error)
