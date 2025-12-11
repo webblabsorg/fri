@@ -43,11 +43,6 @@ export async function middleware(request: NextRequest) {
       const appUrl = request.url.replace('://', '://app.')
       return NextResponse.redirect(new URL(appUrl))
     }
-    // Redirect auth routes to app subdomain (except for admin access)
-    if ((path === '/signin' || path === '/signup') && !request.nextUrl.searchParams.get('admin')) {
-      const appUrl = request.url.replace('://', '://app.')
-      return NextResponse.redirect(new URL(appUrl))
-    }
   }
 
   // For now, let client-side handle auth checking since middleware JWT verification

@@ -15,7 +15,7 @@ export function PricingSection() {
         'Basic templates',
       ],
       cta: 'Start Free',
-      href: '/signup',
+      href: 'https://app.frithai.com/signup',
       popular: false,
     },
     {
@@ -31,7 +31,7 @@ export function PricingSection() {
         'Document export',
       ],
       cta: 'Start Trial',
-      href: '/signup?plan=starter',
+      href: 'https://app.frithai.com/signup?plan=starter',
       popular: false,
     },
     {
@@ -48,7 +48,7 @@ export function PricingSection() {
         'Team collaboration (3 users)',
       ],
       cta: 'Start Trial',
-      href: '/signup?plan=pro',
+      href: 'https://app.frithai.com/signup?plan=pro',
       popular: true,
     },
     {
@@ -65,7 +65,7 @@ export function PricingSection() {
         'SSO & advanced security',
       ],
       cta: 'Start Trial',
-      href: '/signup?plan=advanced',
+      href: 'https://app.frithai.com/signup?plan=advanced',
       popular: false,
     },
   ]

@@ -34,7 +34,7 @@ export function HeroSection() {
 
           {/* CTAs */}
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-            <Link href="/signup">
+            <Link href="https://app.frithai.com/signup">
               <Button size="lg" className="text-lg px-8 py-6">
                 Start For Free →
               </Button>

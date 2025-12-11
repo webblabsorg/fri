@@ -73,6 +73,19 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   const refreshData = async () => {
     setIsLoading(true)
     try {
+      // Check if user is authenticated first
+      const sessionResponse = await fetch('/api/auth/session')
+      if (!sessionResponse.ok) {
+        setIsLoading(false)
+        return
+      }
+      
+      const sessionData = await sessionResponse.json()
+      if (!sessionData.user) {
+        setIsLoading(false)
+        return
+      }
+
       const [orgsResponse, workspacesResponse] = await Promise.all([
         fetch('/api/organizations'),
         fetch('/api/workspaces')

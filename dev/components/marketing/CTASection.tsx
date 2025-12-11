@@ -12,7 +12,7 @@ export function CTASection() {
           Join thousands of legal professionals who save 10+ hours per week with Frith AI.
         </p>
         <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
-          <Link href="/signup">
+          <Link href="https://app.frithai.com/signup">
             <Button
               size="lg"
               variant="secondary"

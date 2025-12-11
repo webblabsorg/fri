@@ -40,12 +40,12 @@ function MarketingHeader() {
         </nav>
 
         <div className="flex items-center space-x-4">
-          <Link href="/signin">
+          <Link href="https://app.frithai.com/signin">
             <Button variant="ghost" size="sm">
               Sign In
             </Button>
           </Link>
-          <Link href="/signup">
+          <Link href="https://app.frithai.com/signup">
             <Button size="sm">
               Start Free
             </Button>
