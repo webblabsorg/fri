@@ -73,19 +73,22 @@ export default function DashboardPage() {
   }
 
   return (
-    <div>
+    <div className="w-full">
+      {/* Page Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Welcome back, {user.name}!</h1>
+        <p className="text-gray-600">
+          Subscription: <span className="font-medium capitalize">{user.subscriptionTier}</span>
+          {user.firmName && ` • ${user.firmName}`}
+        </p>
+      </div>
+
       {/* Main Content */}
       <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold mb-2">Welcome back, {user.name}!</h2>
-          <p className="text-gray-600">
-            Subscription: <span className="font-medium capitalize">{user.subscriptionTier}</span>
-            {user.firmName && ` • ${user.firmName}`}
-          </p>
-        </div>
+        <div className="space-y-8">
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <Card>
             <CardHeader>
               <CardTitle>Tools Available</CardTitle>
@@ -143,7 +146,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Quick Links */}
-        <div className="mt-8">
+        <div>
           <h3 className="text-xl font-bold mb-4">Quick Actions</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <Card 
@@ -201,7 +204,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Coming Soon */}
-        <div className="mt-8">
+        <div>
           <h3 className="text-xl font-bold mb-4">Coming Soon</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
@@ -220,6 +223,7 @@ export default function DashboardPage() {
               </Card>
             ))}
           </div>
+        </div>
         </div>
       </div>
     </div>

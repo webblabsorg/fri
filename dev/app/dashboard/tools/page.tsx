@@ -94,17 +94,20 @@ export default function ToolsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI Legal Tools</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
-            {tools.length} powerful AI tools to supercharge your legal work
-          </p>
-        </div>
+    <div className="w-full">
+      {/* Page Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">AI Legal Tools</h1>
+        <p className="mt-2 text-gray-600 dark:text-gray-400">
+          {tools.length} powerful AI tools to supercharge your legal work
+        </p>
+      </div>
+
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto space-y-6">
 
         {/* Search Bar */}
-        <div className="mb-6">
+        <div>
           <input
             type="text"
             placeholder="Search tools..."
@@ -115,7 +118,7 @@ export default function ToolsPage() {
         </div>
 
         {/* Favorites Toggle */}
-        <div className="mb-6">
+        <div>
           <button
             onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -129,7 +132,7 @@ export default function ToolsPage() {
         </div>
 
         {/* Filters */}
-        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           {/* Category Filter */}
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -255,6 +258,7 @@ export default function ToolsPage() {
             </button>
           </div>
         )}
+      </div>
     </div>
   )
 }

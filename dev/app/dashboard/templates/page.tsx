@@ -72,32 +72,33 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="container py-8">
+    <div className="w-full">
+      {/* Page Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">My Templates</h1>
-        <p className="text-gray-600">
-          Saved input templates for quick reuse
-        </p>
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">My Templates</h1>
+        <p className="text-gray-600">Saved input configurations for quick reuse</p>
       </div>
 
-      {/* Category Filter */}
-      {categories.length > 1 && (
-        <div className="flex gap-2 mb-6 overflow-x-auto">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                selectedCategory === cat
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {cat === 'all' ? 'All' : cat}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto space-y-6">
+        {/* Category Filter */}
+        {categories.length > 1 && (
+          <div className="flex gap-2 mb-6 overflow-x-auto">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  selectedCategory === cat
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                {cat === 'all' ? 'All' : cat}
+              </button>
+            ))}
+          </div>
+        )}
 
       {/* Templates List */}
       {filteredTemplates.length === 0 ? (
@@ -158,13 +159,14 @@ export default function TemplatesPage() {
         </div>
       )}
 
-      {/* Stats */}
-      {templates.length > 0 && (
-        <div className="mt-8 text-center text-sm text-gray-600">
-          {templates.length} template{templates.length !== 1 ? 's' : ''} saved •{' '}
-          Total uses: {templates.reduce((sum, t) => sum + t.useCount, 0)}
-        </div>
-      )}
+        {/* Stats */}
+        {templates.length > 0 && (
+          <div className="mt-8 text-center text-sm text-gray-600">
+            {templates.length} template{templates.length !== 1 ? 's' : ''} saved •{' '}
+            Total uses: {templates.reduce((sum, t) => sum + t.useCount, 0)}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

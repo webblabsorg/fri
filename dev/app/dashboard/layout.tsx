@@ -296,7 +296,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-6 min-h-[calc(100vh-4rem)]">
           {children}
         </main>
         <FeedbackWidget position="bottom-right" />
