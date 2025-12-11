@@ -73,7 +73,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6">
+    <div>
       {/* Main Content */}
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">

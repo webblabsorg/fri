@@ -9,6 +9,10 @@ import type { NextRequest } from 'next/server'
  */
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
+  const host = request.headers.get('host') || ''
+  
+  // Check if this is the app subdomain
+  const isAppSubdomain = host.startsWith('app.') || host.includes('app-')
 
   // Skip middleware for auth routes, API routes, and static files
   if (
@@ -21,6 +25,24 @@ export async function middleware(request: NextRequest) {
     path === '/sso/callback'
   ) {
     return NextResponse.next()
+  }
+
+  // Handle subdomain routing
+  if (isAppSubdomain) {
+    // On app subdomain, redirect root to dashboard
+    if (path === '/') {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+    // Block admin routes on app subdomain
+    if (path.startsWith('/admin')) {
+      return NextResponse.redirect(new URL('/', request.url.replace('app.', '')))
+    }
+  } else {
+    // On main domain, redirect dashboard routes to app subdomain
+    if (path.startsWith('/dashboard')) {
+      const appUrl = request.url.replace('://', '://app.')
+      return NextResponse.redirect(new URL(appUrl))
+    }
   }
 
   // For now, let client-side handle auth checking since middleware JWT verification
