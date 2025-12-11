@@ -160,22 +160,13 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" onClick={() => router.push('/dashboard')}>
-                ← Back
-              </Button>
-              <h1 className="text-2xl font-bold">Settings</h1>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="max-w-4xl mx-auto">
+      <div className="flex items-center gap-4 mb-6">
+        <Button variant="ghost" onClick={() => router.push('/dashboard')}>
+          ← Back
+        </Button>
+        <h1 className="text-2xl font-bold">Settings</h1>
+      </div>
         {/* Tabs */}
         <div className="flex gap-2 mb-6 border-b">
           {['profile', 'security', 'preferences'].map((tab) => (
@@ -396,7 +387,6 @@ export default function SettingsPage() {
             </Card>
           </div>
         )}
-      </main>
     </div>
   )
 }
