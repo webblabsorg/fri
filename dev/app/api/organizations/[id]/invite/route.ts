@@ -4,7 +4,13 @@ import { prisma } from '@/lib/db'
 import jwt from 'jsonwebtoken'
 import { Resend } from 'resend'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Lazy-load Resend to avoid build-time errors when API key is not set
+function getResendClient() {
+  if (!process.env.RESEND_API_KEY) {
+    return null
+  }
+  return new Resend(process.env.RESEND_API_KEY)
+}
 
 export async function POST(
   request: NextRequest,
@@ -95,28 +101,33 @@ export async function POST(
     const inviteUrl = `${process.env.NEXT_PUBLIC_SITE_URL}/invite/${invitationToken}`
     
     try {
-      await resend.emails.send({
-        from: 'Frith AI <noreply@frith.ai>',
-        to: email,
-        subject: `Invitation to join ${membership.organization.name} on Frith AI`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h1 style="color: #1f2937;">You're invited to join ${membership.organization.name}</h1>
-            <p>Hi there!</p>
-            <p>${(session.user as any).name || (session.user as any).email} has invited you to join <strong>${membership.organization.name}</strong> on Frith AI.</p>
-            <p>Frith AI is the leading legal AI platform with 240+ specialized tools for legal professionals.</p>
-            <div style="margin: 30px 0;">
-              <a href="${inviteUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Accept Invitation</a>
+      const resend = getResendClient()
+      if (!resend) {
+        console.warn('Resend API key not configured. Skipping invitation email.')
+      } else {
+        await resend.emails.send({
+          from: 'Frith AI <noreply@frith.ai>',
+          to: email,
+          subject: `Invitation to join ${membership.organization.name} on Frith AI`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h1 style="color: #1f2937;">You're invited to join ${membership.organization.name}</h1>
+              <p>Hi there!</p>
+              <p>${(session.user as any).name || (session.user as any).email} has invited you to join <strong>${membership.organization.name}</strong> on Frith AI.</p>
+              <p>Frith AI is the leading legal AI platform with 240+ specialized tools for legal professionals.</p>
+              <div style="margin: 30px 0;">
+                <a href="${inviteUrl}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">Accept Invitation</a>
+              </div>
+              <p>This invitation will expire in 7 days.</p>
+              <p>If you have any questions, feel free to contact our support team.</p>
+              <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
+              <p style="color: #6b7280; font-size: 14px;">
+                If you didn't expect this invitation, you can safely ignore this email.
+              </p>
             </div>
-            <p>This invitation will expire in 7 days.</p>
-            <p>If you have any questions, feel free to contact our support team.</p>
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #e5e7eb;">
-            <p style="color: #6b7280; font-size: 14px;">
-              If you didn't expect this invitation, you can safely ignore this email.
-            </p>
-          </div>
-        `
-      })
+          `
+        })
+      }
     } catch (emailError) {
       console.error('Failed to send invitation email:', emailError)
       // Don't fail the invitation creation if email fails
