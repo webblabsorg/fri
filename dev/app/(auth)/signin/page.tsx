@@ -33,7 +33,6 @@ export default function SignInPage() {
     setError('')
 
     try {
-      console.log('Submitting signin form...') // Debug log
       const response = await fetch('/api/auth/signin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -44,9 +43,7 @@ export default function SignInPage() {
         }),
       })
 
-      console.log('Signin response:', response.status, response.ok) // Debug log
       const data = await response.json()
-      console.log('Signin data:', data) // Debug log
 
       if (!response.ok) {
         setError(data.error || 'An error occurred')
@@ -68,11 +65,15 @@ export default function SignInPage() {
       }
 
       // Successful login - redirect to dashboard
-      console.log('Login successful, redirecting to dashboard...') // Debug log
-      router.push('/dashboard')
-      router.refresh()
+      if (data.success && data.user) {
+        // Small delay to ensure cookie is set, then redirect
+        setTimeout(() => {
+          window.location.href = '/dashboard'
+        }, 100)
+      } else {
+        setError('Login failed. Please try again.')
+      }
     } catch (error) {
-      console.error('Signin error:', error) // Debug log
       setError('Network error. Please try again.')
     } finally {
       setIsLoading(false)
