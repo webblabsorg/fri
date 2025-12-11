@@ -91,6 +91,13 @@ export default function DashboardLayout({
   const fetchNotifications = async () => {
     try {
       const response = await fetch('/api/notifications?limit=5')
+      // In some contexts (e.g. expired session) this endpoint can return 401.
+      // We simply skip updating notifications in that case to avoid noisy
+      // errors in the console.
+      if (response.status === 401) {
+        return
+      }
+
       if (response.ok) {
         const data = await response.json()
         setNotifications(data.notifications)
@@ -296,7 +303,7 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6 min-h-[calc(100vh-4rem)]">
+        <main className="p-6">
           {children}
         </main>
         <FeedbackWidget position="bottom-right" />

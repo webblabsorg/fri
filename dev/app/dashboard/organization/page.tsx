@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useSession } from 'next-auth/react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -54,7 +53,6 @@ interface Invitation {
 }
 
 export default function OrganizationPage() {
-  const { data: session } = useSession()
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null)
   const [members, setMembers] = useState<Member[]>([])
@@ -67,6 +65,7 @@ export default function OrganizationPage() {
   const [newOrgName, setNewOrgName] = useState('')
   const [newOrgType, setNewOrgType] = useState('law_firm')
   const [newOrgDescription, setNewOrgDescription] = useState('')
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchOrganizations()
@@ -77,6 +76,27 @@ export default function OrganizationPage() {
       fetchMembers()
     }
   }, [selectedOrg])
+
+  // Fetch the current authenticated user so we can avoid allowing a user to
+  // modify their own membership entry. This uses the existing custom auth
+  // session endpoint instead of next-auth's SessionProvider.
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const response = await fetch('/api/auth/session')
+        if (!response.ok) return
+
+        const data = await response.json()
+        if (data?.user?.id) {
+          setCurrentUserId(data.user.id as string)
+        }
+      } catch (error) {
+        console.error('Error fetching current user session:', error)
+      }
+    }
+
+    fetchCurrentUser()
+  }, [])
 
   const fetchOrganizations = async () => {
     try {
@@ -370,7 +390,7 @@ export default function OrganizationPage() {
                                 {member.role}
                               </Badge>
                               {['owner', 'admin'].includes(selectedOrg.role) && 
-                               member.user.id !== (session?.user as any)?.id && (
+                               member.user.id !== currentUserId && (
                                 <div className="flex items-center gap-1">
                                   <Select
                                     value={member.role}
