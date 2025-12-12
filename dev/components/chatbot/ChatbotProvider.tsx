@@ -5,13 +5,11 @@ import { ChatWidget } from './ChatWidget'
 
 interface ChatbotProviderProps {
   enabled?: boolean
-  proactiveDelay?: number
   children: React.ReactNode
 }
 
 export function ChatbotProvider({ 
   enabled = true, 
-  proactiveDelay = 30000,
   children 
 }: ChatbotProviderProps) {
   const [shouldShow, setShouldShow] = useState(false)
@@ -61,7 +59,6 @@ export function ChatbotProvider({
           pageUrl={typeof window !== 'undefined' ? window.location.href : undefined}
           userId={userId}
           userPlan={userPlan}
-          proactiveDelay={proactiveDelay}
         />
       )}
     </>

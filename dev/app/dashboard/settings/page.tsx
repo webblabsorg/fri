@@ -6,6 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { AlertCircle, CheckCircle2, MessageSquare } from 'lucide-react'
 
 interface User {
   id: string
@@ -19,7 +28,7 @@ export default function SettingsPage() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'preferences'>('profile')
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'preferences' | 'feedback'>('profile')
 
   // Profile form
   const [profileData, setProfileData] = useState({
@@ -38,6 +47,18 @@ export default function SettingsPage() {
   const [passwordLoading, setPasswordLoading] = useState(false)
   const [passwordMessage, setPasswordMessage] = useState('')
   const [passwordError, setPasswordError] = useState('')
+
+  // Feedback form
+  const [feedbackType, setFeedbackType] = useState('general')
+  const [feedbackCategory, setFeedbackCategory] = useState('')
+  const [feedbackSubject, setFeedbackSubject] = useState('')
+  const [feedbackMessage, setFeedbackMessage] = useState('')
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null)
+  const [feedbackLoading, setFeedbackLoading] = useState(false)
+  const [feedbackSuccess, setFeedbackSuccess] = useState('')
+  const [feedbackError, setFeedbackError] = useState('')
+  const [showFeedbackHistory, setShowFeedbackHistory] = useState(false)
+  const [feedbackHistory, setFeedbackHistory] = useState<any[]>([])
 
   useEffect(() => {
     checkSession()
@@ -96,6 +117,67 @@ export default function SettingsPage() {
       setProfileMessage('Network error. Please try again.')
     } finally {
       setProfileLoading(false)
+    }
+  }
+
+  const fetchFeedbackHistory = async () => {
+    try {
+      const response = await fetch('/api/support/feedback')
+      if (response.ok) {
+        const data = await response.json()
+        setFeedbackHistory(data.feedback || [])
+      }
+    } catch (error) {
+      console.error('Error fetching feedback history:', error)
+    }
+  }
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setFeedbackError('')
+    setFeedbackSuccess('')
+
+    if (!feedbackSubject.trim() || !feedbackMessage.trim()) {
+      setFeedbackError('Please fill in all required fields')
+      return
+    }
+
+    setFeedbackLoading(true)
+
+    try {
+      const response = await fetch('/api/support/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: feedbackType,
+          category: feedbackCategory || undefined,
+          subject: feedbackSubject,
+          message: feedbackMessage,
+          rating: feedbackRating,
+          page: typeof window !== 'undefined' ? window.location.pathname : undefined,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to submit feedback')
+      }
+
+      setFeedbackSuccess('Thank you for your feedback! We appreciate your input.')
+      setFeedbackType('general')
+      setFeedbackCategory('')
+      setFeedbackSubject('')
+      setFeedbackMessage('')
+      setFeedbackRating(null)
+
+      if (showFeedbackHistory) {
+        fetchFeedbackHistory()
+      }
+    } catch (error: any) {
+      console.error('Error submitting feedback:', error)
+      setFeedbackError(error.message || 'Failed to submit feedback. Please try again.')
+    } finally {
+      setFeedbackLoading(false)
     }
   }
 
@@ -178,7 +260,7 @@ export default function SettingsPage() {
       <div className="max-w-4xl mx-auto">
         {/* Tabs */}
         <div className="flex gap-2 mb-6 border-b">
-          {['profile', 'security', 'preferences'].map((tab) => (
+          {['profile', 'security', 'preferences', 'feedback'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -394,6 +476,176 @@ export default function SettingsPage() {
                 </Button>
               </CardContent>
             </Card>
+          </div>
+        )}
+
+        {/* Feedback Tab */}
+        {activeTab === 'feedback' && (
+          <div className="space-y-6">
+            {/* Success Message */}
+            {feedbackSuccess && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
+                <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-green-800">{feedbackSuccess}</p>
+              </div>
+            )}
+
+            {/* Error Message */}
+            {feedbackError && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-800">{feedbackError}</p>
+              </div>
+            )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5" />
+                  Share Your Feedback
+                </CardTitle>
+                <CardDescription>
+                  Help us improve Frith AI by sharing your thoughts, suggestions, or reporting issues.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleFeedbackSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="feedbackType">
+                      Feedback Type <span className="text-red-500">*</span>
+                    </Label>
+                    <Select value={feedbackType} onValueChange={setFeedbackType}>
+                      <SelectTrigger id="feedbackType">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="general">General Feedback</SelectItem>
+                        <SelectItem value="feature_request">Feature Request</SelectItem>
+                        <SelectItem value="bug_report">Bug Report</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="feedbackCategory">Category (Optional)</Label>
+                    <Input
+                      id="feedbackCategory"
+                      placeholder="e.g., Dashboard, Tools, Billing"
+                      value={feedbackCategory}
+                      onChange={(e) => setFeedbackCategory(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="feedbackSubject">
+                      Subject <span className="text-red-500">*</span>
+                    </Label>
+                    <Input
+                      id="feedbackSubject"
+                      placeholder="Brief summary of your feedback"
+                      value={feedbackSubject}
+                      onChange={(e) => setFeedbackSubject(e.target.value)}
+                      maxLength={200}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="feedbackMessage">
+                      Details <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      id="feedbackMessage"
+                      placeholder="Please provide details about your feedback, feature request, or issue..."
+                      value={feedbackMessage}
+                      onChange={(e) => setFeedbackMessage(e.target.value)}
+                      rows={6}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Overall Experience (Optional)</Label>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4, 5].map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setFeedbackRating(value)}
+                          className={`w-10 h-10 rounded-lg border-2 transition-colors ${
+                            feedbackRating === value
+                              ? 'border-primary bg-primary text-primary-foreground'
+                              : 'border-gray-200 hover:border-primary'
+                          }`}
+                        >
+                          {value}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500">1 = Poor, 5 = Excellent</p>
+                  </div>
+
+                  <Button type="submit" disabled={feedbackLoading}>
+                    {feedbackLoading ? 'Submitting...' : 'Submit Feedback'}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            {/* Feedback History */}
+            <div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowFeedbackHistory(!showFeedbackHistory)
+                  if (!showFeedbackHistory) fetchFeedbackHistory()
+                }}
+                className="w-full"
+              >
+                {showFeedbackHistory ? 'Hide' : 'View'} My Feedback History
+              </Button>
+
+              {showFeedbackHistory && (
+                <div className="mt-4 space-y-4">
+                  {feedbackHistory.length === 0 ? (
+                    <Card>
+                      <CardContent className="py-8 text-center text-gray-500">
+                        No feedback history found.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    feedbackHistory.map((fb) => (
+                      <Card key={fb.id}>
+                        <CardHeader>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-xs px-2 py-1 bg-gray-100 rounded">
+                                  {fb.type.replace(/_/g, ' ')}
+                                </span>
+                                <span className="text-xs px-2 py-1 bg-gray-100 rounded">
+                                  {fb.status}
+                                </span>
+                                {fb.rating && (
+                                  <span className="text-xs">⭐ {fb.rating}/5</span>
+                                )}
+                              </div>
+                              <CardTitle className="text-base">{fb.subject}</CardTitle>
+                              <CardDescription className="mt-1 text-xs">
+                                Submitted {new Date(fb.createdAt).toLocaleString()}
+                              </CardDescription>
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-600 line-clamp-2">{fb.message}</p>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
