@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { checkMonitorQuota } from '@/lib/web-search/quota-service'
+
+// Supported sources for monitors
+const SUPPORTED_SOURCES = ['web', 'news']
 
 // POST /api/web-search/monitors - Create a new monitor
 export async function POST(request: NextRequest) {
@@ -23,6 +27,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check monitor quota before creating
+    const quotaCheck = await checkMonitorQuota(user.id, user.subscriptionTier)
+    if (!quotaCheck.allowed) {
+      return NextResponse.json(
+        { 
+          error: quotaCheck.reason || 'Monitor limit reached',
+          usage: quotaCheck.usage,
+          limits: quotaCheck.limits,
+        },
+        { status: 403 }
+      )
+    }
+
     const body = await request.json()
     const {
       monitorName,
@@ -42,9 +59,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate frequency
+    const validFrequencies = ['daily', 'weekly', 'realtime']
+    if (!validFrequencies.includes(frequency)) {
+      return NextResponse.json(
+        { error: 'Invalid frequency. Must be daily, weekly, or realtime' },
+        { status: 400 }
+      )
+    }
+
+    // Filter to only supported sources
+    const validSources = sources.filter((s: string) => SUPPORTED_SOURCES.includes(s))
+    if (validSources.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one valid source is required (web or news)' },
+        { status: 400 }
+      )
+    }
+
     // Calculate next run time based on frequency
     const now = new Date()
-    let nextRunAt = new Date(now)
+    const nextRunAt = new Date(now)
     
     switch (frequency) {
       case 'daily':
@@ -66,7 +101,7 @@ export async function POST(request: NextRequest) {
         projectId,
         monitorName,
         queryText,
-        sources,
+        sources: validSources,
         frequency,
         notifyEmail,
         notifyInApp,
@@ -77,7 +112,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ monitor })
   } catch (error) {
-    console.error('Create monitor error:', error)
+    console.error('[WebSearch] Create monitor error:', error)
     return NextResponse.json(
       { error: 'Failed to create monitor' },
       { status: 500 }

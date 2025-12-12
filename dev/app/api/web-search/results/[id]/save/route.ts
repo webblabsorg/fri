@@ -6,9 +6,10 @@ import { saveResultToProject } from '@/lib/web-search/web-search-service'
 // POST /api/web-search/results/:id/save - Save result to project/matter
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -29,7 +30,7 @@ export async function POST(
 
     // Verify ownership
     const result = await prisma.webSearchResult.findFirst({
-      where: { id: params.id },
+      where: { id },
       include: {
         query: {
           select: { userId: true },
@@ -58,7 +59,11 @@ export async function POST(
     const project = await prisma.project.findFirst({
       where: {
         id: projectId,
-        userId: user.id,
+        OR: [
+          { createdBy: user.id },
+          { workspace: { members: { some: { userId: user.id } } } },
+          { organization: { members: { some: { userId: user.id } } } },
+        ],
       },
     })
 
@@ -69,7 +74,7 @@ export async function POST(
       )
     }
 
-    await saveResultToProject(params.id, projectId, notes, tags)
+    await saveResultToProject(id, projectId, notes, tags)
 
     return NextResponse.json({ success: true })
   } catch (error) {

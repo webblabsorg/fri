@@ -6,9 +6,10 @@ import { generateCitation, archiveUrl, saveResultToProject } from '@/lib/web-sea
 // GET /api/web-search/results/:id - Get result details
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -28,7 +29,7 @@ export async function GET(
     }
 
     const result = await prisma.webSearchResult.findFirst({
-      where: { id: params.id },
+      where: { id },
       include: {
         query: {
           select: {
@@ -59,9 +60,10 @@ export async function GET(
 // PATCH /api/web-search/results/:id - Update result (notes, tags)
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -82,7 +84,7 @@ export async function PATCH(
 
     // Verify ownership
     const result = await prisma.webSearchResult.findFirst({
-      where: { id: params.id },
+      where: { id },
       include: {
         query: {
           select: { userId: true },
@@ -101,7 +103,7 @@ export async function PATCH(
     const { userNotes, userTags } = body
 
     const updated = await prisma.webSearchResult.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         userNotes: userNotes !== undefined ? userNotes : result.userNotes,
         userTags: userTags !== undefined ? userTags : result.userTags,

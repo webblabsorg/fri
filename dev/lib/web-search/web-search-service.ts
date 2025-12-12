@@ -1,5 +1,7 @@
 import { prisma } from '../db'
 import { generateAIResponse, normalizeTier } from '../ai/model-service'
+import { validateUrlForFetch, safeFetch } from './url-validator'
+import crypto from 'crypto'
 
 // Types
 export interface WebSearchOptions {
@@ -486,7 +488,7 @@ Access Date: ${new Date().toISOString()}`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
     ],
-    tier: 'STARTER',
+    tier: 'PRO',
     temperature: 0.1,
   })
 
@@ -500,16 +502,23 @@ Access Date: ${new Date().toISOString()}`
   return response.content
 }
 
-// Archive a URL
+// Archive a URL with SSRF protection and SHA-256 hashing
 export async function archiveUrl(
   userId: string,
   resultId: string,
   url: string
-): Promise<{ archivedUrl: string }> {
-  // Try to get from Wayback Machine
+): Promise<{ archivedUrl: string; archiveId?: string }> {
+  // Validate URL for SSRF protection
+  const validation = validateUrlForFetch(url)
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Invalid URL')
+  }
+
+  // Try to get from Wayback Machine first
   try {
     const saveResponse = await fetch(`https://web.archive.org/save/${url}`, {
       method: 'GET',
+      signal: AbortSignal.timeout(30000), // 30s timeout
     })
 
     if (saveResponse.ok) {
@@ -532,11 +541,18 @@ export async function archiveUrl(
     console.error('Wayback Machine archive error:', error)
   }
 
-  // Fallback: store content locally
+  // Fallback: store content locally with SSRF protection
   try {
-    const response = await fetch(url)
-    const content = await response.text()
-    const contentHash = Buffer.from(content).toString('base64').slice(0, 64)
+    const { content, headers } = await safeFetch(url, {
+      maxSizeBytes: 2 * 1024 * 1024, // 2MB limit
+      timeoutMs: 30000, // 30s timeout
+    })
+
+    // Generate SHA-256 hash for integrity verification
+    const contentHash = crypto
+      .createHash('sha256')
+      .update(content)
+      .digest('hex')
 
     const archive = await prisma.webSearchArchive.create({
       data: {
@@ -545,12 +561,29 @@ export async function archiveUrl(
         originalUrl: url,
         archivedContent: content,
         contentHash,
+        captureMethod: 'local',
+        captureHeaders: headers,
       },
     })
 
-    return { archivedUrl: `/api/web-search/archives/${archive.id}` }
+    // Update the result with archive reference
+    if (resultId) {
+      await prisma.webSearchResult.update({
+        where: { id: resultId },
+        data: {
+          archivedUrl: `/api/web-search/archives/${archive.id}`,
+          archivedAt: new Date(),
+        },
+      })
+    }
+
+    return { 
+      archivedUrl: `/api/web-search/archives/${archive.id}`,
+      archiveId: archive.id,
+    }
   } catch (error) {
-    throw new Error('Failed to archive URL')
+    const message = error instanceof Error ? error.message : 'Failed to archive URL'
+    throw new Error(message)
   }
 }
 

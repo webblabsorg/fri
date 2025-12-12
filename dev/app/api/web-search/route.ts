@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { executeWebSearch } from '@/lib/web-search/web-search-service'
+import { checkWebSearchQuota } from '@/lib/web-search/quota-service'
 import { prisma } from '@/lib/db'
+
+// Supported sources - only web and news are currently implemented
+const SUPPORTED_SOURCES = ['web', 'news']
 
 // POST /api/web-search - Execute a new search
 export async function POST(request: NextRequest) {
@@ -24,13 +28,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check subscription tier - web search requires at least 'pro' tier
-    const allowedTiers = ['pro', 'professional', 'advanced', 'enterprise']
+    // Check subscription tier - web search requires at least starter tier
+    const allowedTiers = ['starter', 'pro', 'professional', 'advanced', 'enterprise']
     if (!allowedTiers.includes(user.subscriptionTier.toLowerCase())) {
       return NextResponse.json(
         { 
-          error: 'Legal Web Search requires Professional plan or higher',
-          requiredTier: 'pro',
+          error: 'Legal Web Search requires Starter plan or higher',
+          requiredTier: 'starter',
           currentTier: user.subscriptionTier
         },
         { status: 403 }
@@ -56,13 +60,52 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate search mode
+    const validModes = ['quick', 'deep', 'targeted', 'monitor']
+    if (!validModes.includes(searchMode)) {
+      return NextResponse.json(
+        { error: 'Invalid search mode' },
+        { status: 400 }
+      )
+    }
+
+    // Filter to only supported sources
+    const validSources = sources.filter((s: string) => SUPPORTED_SOURCES.includes(s))
+    if (validSources.length === 0) {
+      return NextResponse.json(
+        { error: 'At least one valid source is required (web or news)' },
+        { status: 400 }
+      )
+    }
+
+    // Check quota before executing search
+    const quotaCheck = await checkWebSearchQuota(user.id, user.subscriptionTier, searchMode)
+    if (!quotaCheck.allowed) {
+      return NextResponse.json(
+        { 
+          error: quotaCheck.reason || 'Search quota exceeded',
+          usage: quotaCheck.usage,
+          limits: quotaCheck.limits,
+        },
+        { status: 403 }
+      )
+    }
+
+    // Check if Bing API key is configured (production requirement)
+    if (!process.env.BING_API_KEY && process.env.NODE_ENV === 'production') {
+      return NextResponse.json(
+        { error: 'Search service not configured. Please contact support.' },
+        { status: 503 }
+      )
+    }
+
     // Execute the search
     const result = await executeWebSearch({
       userId: user.id,
       queryText: queryText.trim(),
       searchMode,
       searchType,
-      sources,
+      sources: validSources,
       dateRangeStart: dateRangeStart ? new Date(dateRangeStart) : undefined,
       dateRangeEnd: dateRangeEnd ? new Date(dateRangeEnd) : undefined,
       jurisdiction,
@@ -76,7 +119,7 @@ export async function POST(request: NextRequest) {
       results: result.results,
     })
   } catch (error) {
-    console.error('Web search error:', error)
+    console.error('[WebSearch] Search error:', error)
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Search failed' },
       { status: 500 }

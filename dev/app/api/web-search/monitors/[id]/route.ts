@@ -5,9 +5,10 @@ import { prisma } from '@/lib/db'
 // GET /api/web-search/monitors/:id - Get monitor details
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -28,7 +29,7 @@ export async function GET(
 
     const monitor = await prisma.webSearchMonitor.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: user.id,
       },
     })
@@ -53,9 +54,10 @@ export async function GET(
 // PATCH /api/web-search/monitors/:id - Update monitor
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -77,7 +79,7 @@ export async function PATCH(
     // Verify ownership
     const existing = await prisma.webSearchMonitor.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: user.id,
       },
     })
@@ -102,7 +104,7 @@ export async function PATCH(
     } = body
 
     const monitor = await prisma.webSearchMonitor.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         monitorName: monitorName ?? existing.monitorName,
         queryText: queryText ?? existing.queryText,
@@ -128,9 +130,10 @@ export async function PATCH(
 // DELETE /api/web-search/monitors/:id - Delete monitor
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -152,7 +155,7 @@ export async function DELETE(
     // Verify ownership
     const monitor = await prisma.webSearchMonitor.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: user.id,
       },
     })
@@ -165,7 +168,7 @@ export async function DELETE(
     }
 
     await prisma.webSearchMonitor.delete({
-      where: { id: params.id },
+      where: { id },
     })
 
     return NextResponse.json({ success: true })

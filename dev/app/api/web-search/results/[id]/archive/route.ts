@@ -6,9 +6,10 @@ import { archiveUrl } from '@/lib/web-search/web-search-service'
 // POST /api/web-search/results/:id/archive - Archive the URL
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -29,7 +30,7 @@ export async function POST(
 
     // Verify ownership
     const result = await prisma.webSearchResult.findFirst({
-      where: { id: params.id },
+      where: { id },
       include: {
         query: {
           select: { userId: true },
@@ -44,7 +45,7 @@ export async function POST(
       )
     }
 
-    const archived = await archiveUrl(user.id, params.id, result.sourceUrl)
+    const archived = await archiveUrl(user.id, id, result.sourceUrl)
 
     return NextResponse.json({
       success: true,

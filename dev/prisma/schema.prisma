@@ -1777,8 +1777,10 @@ model WebSearchArchive {
   screenshotUrl   String?
   
   // Metadata
-  capturedAt      DateTime @default(now())
-  contentHash     String   // For integrity verification
+  createdAt       DateTime @default(now())
+  contentHash     String   // SHA-256 hash for integrity verification
+  captureMethod   String   @default("local") // wayback, local
+  captureHeaders  Json?    // HTTP headers at capture time
   
   // Legal
   certificationData Json?  // For authentication purposes

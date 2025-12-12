@@ -332,6 +332,28 @@ export function ToolDetailPage({ tool, userTier }: ToolDetailPageProps) {
     )
   }
 
+  // Special handling for Legal Web Search - redirect to dedicated page
+  if (tool.slug === 'legal-web-search') {
+    return (
+      <div className="container max-w-4xl py-12">
+        <Card className="p-8 text-center">
+          <div className="text-6xl mb-4">{tool.icon}</div>
+          <h2 className="text-2xl font-bold mb-4">{tool.name}</h2>
+          <p className="text-gray-600 mb-6">
+            {tool.description}
+          </p>
+          <p className="text-sm text-gray-500 mb-6">
+            This tool has a dedicated interface for advanced search capabilities, 
+            evidence analysis, and result management.
+          </p>
+          <Button onClick={() => router.push('/dashboard/web-search')} size="lg">
+            Open Web Search Tool
+          </Button>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="container max-w-6xl py-8">
       {/* Header */}

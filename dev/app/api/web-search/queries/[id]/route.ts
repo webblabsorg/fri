@@ -5,9 +5,10 @@ import { prisma } from '@/lib/db'
 // GET /api/web-search/queries/:id - Get query details with results
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -28,7 +29,7 @@ export async function GET(
 
     const query = await prisma.webSearchQuery.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: user.id,
       },
       include: {
@@ -58,9 +59,10 @@ export async function GET(
 // DELETE /api/web-search/queries/:id - Delete a query and its results
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const sessionToken = request.cookies.get('session')?.value
 
     if (!sessionToken) {
@@ -82,7 +84,7 @@ export async function DELETE(
     // Verify ownership
     const query = await prisma.webSearchQuery.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: user.id,
       },
     })
@@ -96,7 +98,7 @@ export async function DELETE(
 
     // Delete query (results will cascade delete)
     await prisma.webSearchQuery.delete({
-      where: { id: params.id },
+      where: { id },
     })
 
     return NextResponse.json({ success: true })

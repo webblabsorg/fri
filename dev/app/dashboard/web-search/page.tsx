@@ -192,23 +192,28 @@ export default function WebSearchPage() {
               <label className="block text-sm font-medium mb-2">Sources</label>
               <div className="flex flex-wrap gap-3">
                 {[
-                  { id: 'web', label: 'Web', icon: '🌐' },
-                  { id: 'news', label: 'News', icon: '📰' },
-                  { id: 'courts', label: 'Courts', icon: '⚖️' },
-                  { id: 'gov', label: 'Gov Records', icon: '🏛️' },
-                  { id: 'corporate', label: 'Corporate', icon: '🏢' },
+                  { id: 'web', label: 'Web', icon: '🌐', available: true },
+                  { id: 'news', label: 'News', icon: '📰', available: true },
+                  { id: 'courts', label: 'Courts', icon: '⚖️', available: false, tooltip: 'Coming soon' },
+                  { id: 'gov', label: 'Gov Records', icon: '🏛️', available: false, tooltip: 'Coming soon' },
+                  { id: 'corporate', label: 'Corporate', icon: '🏢', available: false, tooltip: 'Coming soon' },
                 ].map((source) => (
                   <button
                     key={source.id}
                     type="button"
-                    onClick={() => toggleSource(source.id)}
+                    onClick={() => source.available && toggleSource(source.id)}
+                    disabled={!source.available}
+                    title={source.available ? undefined : source.tooltip}
                     className={`px-4 py-2 rounded-lg border transition-colors ${
-                      sources.includes(source.id)
+                      !source.available
+                        ? 'bg-zinc-900 text-zinc-600 border-zinc-800 cursor-not-allowed opacity-50'
+                        : sources.includes(source.id)
                         ? 'bg-white text-black border-white'
                         : 'bg-transparent text-gray-400 border-zinc-700 hover:border-zinc-500'
                     }`}
                   >
                     {source.icon} {source.label}
+                    {!source.available && <span className="ml-1 text-xs">(Soon)</span>}
                   </button>
                 ))}
               </div>
