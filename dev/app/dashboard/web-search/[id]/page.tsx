@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, use } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 
@@ -50,7 +50,8 @@ interface SearchQuery {
   results: SearchResult[]
 }
 
-export default function WebSearchQueryPage({ params }: { params: { id: string } }) {
+export default function WebSearchQueryPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
   const router = useRouter()
   const [query, setQuery] = useState<SearchQuery | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -61,11 +62,11 @@ export default function WebSearchQueryPage({ params }: { params: { id: string } 
 
   useEffect(() => {
     loadQuery()
-  }, [params.id])
+  }, [id])
 
   const loadQuery = async () => {
     try {
-      const response = await fetch(`/api/web-search/queries/${params.id}`)
+      const response = await fetch(`/api/web-search/queries/${id}`)
       if (!response.ok) {
         throw new Error('Query not found')
       }
