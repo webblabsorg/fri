@@ -19,7 +19,8 @@ import {
   User,
   LogOut,
   Menu,
-  X
+  X,
+  Search
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -140,6 +141,7 @@ export default function DashboardLayout({
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Home },
     { name: 'AI Tools', href: '/dashboard/tools', icon: Wrench },
+    { name: 'Web Search', href: '/dashboard/web-search', icon: Search },
     { name: 'Projects', href: '/dashboard/projects', icon: FolderOpen },
     { name: 'History', href: '/dashboard/history', icon: History },
     { name: 'Templates', href: '/dashboard/templates', icon: FileText },

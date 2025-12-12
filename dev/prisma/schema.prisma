@@ -1631,3 +1631,159 @@ model PushNotification {
   @@index([status])
   @@index([createdAt])
 }
+
+// ============================================================================
+// PHASE 12.5: LEGAL WEB SEARCH & EVIDENCE DISCOVERY (TOOL #241)
+// ============================================================================
+
+model WebSearchQuery {
+  id              String   @id @default(uuid())
+  userId          String
+  projectId       String?  // Link to matter/project
+  
+  // Query
+  queryText       String
+  searchMode      String   @default("quick") // quick, deep, targeted, monitor
+  searchType      String?  // person, company, property, case
+  sources         String[] // web, news, courts, gov, social, corporate
+  
+  // Filters
+  dateRangeStart  DateTime?
+  dateRangeEnd    DateTime?
+  jurisdiction    String?
+  
+  // AI Enhancement
+  expandedQuery   String?  // AI-expanded query terms
+  relatedTerms    String[]
+  
+  // Results
+  resultCount     Int      @default(0)
+  
+  // Status
+  status          String   @default("pending") // pending, processing, completed, failed
+  errorMessage    String?
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  
+  // Relations
+  results         WebSearchResult[]
+  
+  @@index([userId])
+  @@index([projectId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model WebSearchResult {
+  id              String   @id @default(uuid())
+  queryId         String
+  
+  // Source
+  sourceType      String   // web, news, court, gov, social, corporate
+  sourceUrl       String
+  sourceDomain    String
+  
+  // Content
+  title           String
+  snippet         String   @db.Text
+  fullContent     String?  @db.Text
+  publishedDate   DateTime?
+  author          String?
+  
+  // AI Analysis
+  relevanceScore  Int      @default(0) // 0-100
+  evidenceValue   String   @default("none") // high, medium, low, none
+  evidenceType    String?  // documentary, testimonial, demonstrative
+  suggestedUse    String?  // impeachment, corroboration, direct
+  keyFindings     String[]
+  mentionedEntities Json?  // {people, companies, dates, amounts}
+  suggestedActions String[]
+  
+  // Credibility
+  credibilityScore Int?    // 0-100
+  biasIndicators  String[]
+  factCheckStatus String?  // verified, disputed, unverified
+  
+  // Admissibility
+  admissibilityNotes Json? // {hearsay, authentication, bestEvidence, privilege}
+  
+  // Citation
+  citationBluebook String?
+  citationAlwd    String?
+  archivedUrl     String?  // Wayback Machine or internal archive
+  archivedAt      DateTime?
+  
+  // User Actions
+  isSaved         Boolean  @default(false)
+  savedToProjectId String?
+  userNotes       String?
+  userTags        String[]
+  
+  createdAt       DateTime @default(now())
+  
+  query           WebSearchQuery @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  
+  @@index([queryId])
+  @@index([relevanceScore])
+  @@index([evidenceValue])
+}
+
+model WebSearchMonitor {
+  id              String   @id @default(uuid())
+  userId          String
+  projectId       String?  // Link to matter/project
+  
+  // Monitor Config
+  monitorName     String
+  queryText       String
+  sources         String[]
+  
+  // Schedule
+  frequency       String   @default("daily") // daily, weekly, realtime
+  
+  // Notifications
+  notifyEmail     Boolean  @default(true)
+  notifyInApp     Boolean  @default(true)
+  minRelevanceScore Int    @default(70)
+  
+  // Status
+  isActive        Boolean  @default(true)
+  lastRunAt       DateTime?
+  nextRunAt       DateTime?
+  
+  // Results
+  totalResults    Int      @default(0)
+  newResults      Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([userId])
+  @@index([projectId])
+  @@index([isActive])
+  @@index([nextRunAt])
+}
+
+model WebSearchArchive {
+  id              String   @id @default(uuid())
+  userId          String
+  resultId        String?
+  
+  originalUrl     String
+  archivedContent String   @db.Text
+  archivedHtml    String?  @db.Text
+  screenshotUrl   String?
+  
+  // Metadata
+  capturedAt      DateTime @default(now())
+  contentHash     String   // For integrity verification
+  
+  // Legal
+  certificationData Json?  // For authentication purposes
+  
+  @@index([userId])
+  @@index([resultId])
+  @@index([originalUrl])
+}
