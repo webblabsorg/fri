@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import OrganizationSwitcher from '@/components/layout/OrganizationSwitcher'
-import { FeedbackWidget } from '@/components/beta/FeedbackWidget'
 import { 
   Home, 
   Wrench, 
@@ -306,7 +305,6 @@ export default function DashboardLayout({
         <main className="px-6 pt-4 pb-6">
           {children}
         </main>
-        <FeedbackWidget position="bottom-right" />
       </div>
     </div>
   )
