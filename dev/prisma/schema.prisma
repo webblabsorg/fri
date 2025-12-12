@@ -125,6 +125,23 @@ model Organization {
   invitations OrganizationInvitation[]
   workspaces  Workspace[]
   projects    Project[]
+  
+  // Phase 12: Financial Core Relations
+  contacts          Contact[]
+  matters           Matter[]
+  timeEntries       TimeEntry[]
+  chartOfAccounts   ChartOfAccount[]
+  journalEntries    JournalEntry[]
+  generalLedgerEntries GeneralLedgerEntry[]
+  trustAccounts     TrustAccount[]
+  invoices          Invoice[]
+  payments          Payment[]
+  billingRates      BillingRate[]
+  expenses          Expense[]
+  vendors           Vendor[]
+  vendorBills       VendorBill[]
+  vendorPayments    VendorPayment[]
+  expensePolicies   ExpensePolicy[]
 
   @@index([status])
 }
@@ -1788,4 +1805,924 @@ model WebSearchArchive {
   @@index([userId])
   @@index([resultId])
   @@index([originalUrl])
+}
+
+// ============================================================================
+// PHASE 12: LEGAL ERP - CONTACTS & MATTERS (Foundation)
+// ============================================================================
+
+model Contact {
+  id              String   @id @default(uuid())
+  organizationId  String
+  contactType     String   // client, prospect, vendor, expert_witness, opposing_counsel
+  
+  // Basic Info
+  firstName       String?
+  lastName        String?
+  companyName     String?
+  displayName     String   // Computed: firstName lastName or companyName
+  email           String?
+  phone           String?
+  mobile          String?
+  
+  // Address
+  address1        String?
+  address2        String?
+  city            String?
+  state           String?
+  postalCode      String?
+  country         String   @default("US")
+  
+  // Billing
+  billingEmail    String?
+  billingAddress1 String?
+  billingAddress2 String?
+  billingCity     String?
+  billingState    String?
+  billingPostalCode String?
+  billingCountry  String?
+  
+  // Status
+  status          String   @default("active") // active, inactive, archived
+  isActive        Boolean  @default(true)
+  
+  // Metadata
+  source          String?  // referral, website, marketing
+  notes           String?  @db.Text
+  tags            String[]
+  customFields    Json?
+  
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  matters         Matter[]
+  invoices        Invoice[]
+  payments        Payment[]
+  trustLedgers    ClientTrustLedger[]
+  expenses        Expense[]
+  
+  @@index([organizationId])
+  @@index([contactType])
+  @@index([email])
+  @@index([status])
+}
+
+model Matter {
+  id              String   @id @default(uuid())
+  matterNumber    String   // Auto-generated: MAT-2025-0001
+  organizationId  String
+  clientId        String
+  
+  // Matter Info
+  name            String
+  description     String?  @db.Text
+  matterType      String   // litigation, corporate, estate, family, criminal, etc.
+  practiceArea    String?
+  
+  // Status
+  status          String   @default("active") // active, pending, closed, archived
+  openDate        DateTime @default(now())
+  closeDate       DateTime?
+  
+  // Billing
+  billingType     String   @default("hourly") // hourly, fixed_fee, contingency, hybrid
+  billingRate     Decimal? @db.Decimal(15, 2)
+  contingencyPercent Decimal? @db.Decimal(5, 2)
+  estimatedFees   Decimal? @db.Decimal(15, 2)
+  budgetAmount    Decimal? @db.Decimal(15, 2)
+  
+  // Responsible
+  responsibleAttorneyId String?
+  originatingAttorneyId String?
+  
+  // Court/Case Info
+  courtName       String?
+  caseNumber      String?
+  jurisdiction    String?
+  judge           String?
+  
+  // Conflict Check
+  conflictCheckCompleted Boolean @default(false)
+  conflictCheckDate DateTime?
+  conflictCheckBy String?
+  
+  notes           String?  @db.Text
+  customFields    Json?
+  
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  client          Contact      @relation(fields: [clientId], references: [id])
+  timeEntries     TimeEntry[]
+  invoices        Invoice[]
+  expenses        Expense[]
+  trustLedgers    ClientTrustLedger[]
+  vendorBills     VendorBill[]
+  
+  @@unique([organizationId, matterNumber])
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([status])
+  @@index([matterType])
+}
+
+model TimeEntry {
+  id              String   @id @default(uuid())
+  organizationId  String
+  userId          String   // Attorney/timekeeper
+  matterId        String
+  
+  // Time
+  date            DateTime
+  hours           Decimal  @db.Decimal(5, 2)
+  
+  // Billing
+  rate            Decimal  @db.Decimal(15, 2)
+  amount          Decimal  @db.Decimal(15, 2)
+  isBillable      Boolean  @default(true)
+  isBilled        Boolean  @default(false)
+  
+  // Description
+  description     String   @db.Text
+  
+  // UTBMS Codes
+  utbmsTaskCode   String?
+  utbmsActivityCode String?
+  
+  // Status
+  status          String   @default("draft") // draft, submitted, approved, billed
+  approvedBy      String?
+  approvedAt      DateTime?
+  
+  // Invoice Link
+  invoiceLineItemId String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  matter          Matter       @relation(fields: [matterId], references: [id])
+  invoiceLineItem InvoiceLineItem?
+  
+  @@index([organizationId])
+  @@index([userId])
+  @@index([matterId])
+  @@index([date])
+  @@index([status])
+}
+
+// ============================================================================
+// PHASE 12.1.1: CHART OF ACCOUNTS & GENERAL LEDGER
+// ============================================================================
+
+model ChartOfAccount {
+  id              String   @id @default(uuid())
+  organizationId  String
+  accountNumber   String   // e.g., "1000-Assets-Cash"
+  accountName     String
+  accountType     String   // asset, liability, equity, revenue, expense
+  parentId        String?  // For hierarchical structure
+  currency        String   @default("USD")
+  isActive        Boolean  @default(true)
+  description     String?
+  normalBalance   String   // debit, credit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  parent          ChartOfAccount? @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children        ChartOfAccount[] @relation("AccountHierarchy")
+  transactions    GeneralLedgerEntry[]
+  
+  @@unique([organizationId, accountNumber])
+  @@index([organizationId])
+  @@index([accountType])
+  @@index([parentId])
+}
+
+model JournalEntry {
+  id              String   @id @default(uuid())
+  organizationId  String
+  journalNumber   String   // Auto-generated: JE-2025-0001
+  journalType     String   // standard, adjusting, closing, reversing
+  description     String
+  postedDate      DateTime
+  status          String   @default("draft") // draft, posted, reversed
+  totalDebit      Decimal  @db.Decimal(15, 2)
+  totalCredit     Decimal  @db.Decimal(15, 2)
+  createdBy       String
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  entries         GeneralLedgerEntry[]
+  
+  @@unique([organizationId, journalNumber])
+  @@index([organizationId])
+  @@index([status])
+  @@index([postedDate])
+}
+
+model GeneralLedgerEntry {
+  id              String   @id @default(uuid())
+  organizationId  String
+  accountId       String
+  journalId       String   // Groups related entries
+  debit           Decimal  @db.Decimal(15, 2)
+  credit          Decimal  @db.Decimal(15, 2)
+  description     String
+  referenceId     String?  // Links to invoice, expense, trust transfer
+  referenceType   String?  // invoice, expense, trust_transfer, manual
+  currency        String   @default("USD")
+  exchangeRate    Decimal? @db.Decimal(10, 6)
+  baseCurrencyAmount Decimal? @db.Decimal(15, 2)
+  postedDate      DateTime
+  fiscalYear      Int
+  fiscalPeriod    Int      // 1-12 for months
+  isReconciled    Boolean  @default(false)
+  reconciledAt    DateTime?
+  reconciledBy    String?
+  createdBy       String
+  createdAt       DateTime @default(now())
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  account         ChartOfAccount @relation(fields: [accountId], references: [id])
+  journal         JournalEntry @relation(fields: [journalId], references: [id])
+  
+  @@index([organizationId])
+  @@index([accountId])
+  @@index([journalId])
+  @@index([postedDate])
+  @@index([fiscalYear, fiscalPeriod])
+}
+
+// ============================================================================
+// PHASE 12.1.2: TRUST ACCOUNTING & IOLTA COMPLIANCE
+// ============================================================================
+
+model TrustAccount {
+  id              String   @id @default(uuid())
+  organizationId  String
+  accountName     String   // e.g., "IOLTA Account - Bank of America"
+  bankName        String
+  accountNumber   String   // Encrypted
+  routingNumber   String?  // Encrypted
+  accountType     String   @default("IOLTA") // IOLTA, client_trust, escrow
+  currency        String   @default("USD")
+  currentBalance  Decimal  @db.Decimal(15, 2) @default(0)
+  lastReconciledBalance Decimal? @db.Decimal(15, 2)
+  lastReconciledDate DateTime?
+  isActive        Boolean  @default(true)
+  jurisdiction    String   // e.g., "California", "New York"
+  stateBarId      String?  // State bar identifier
+  interestRate    Decimal? @db.Decimal(5, 4) // For interest-bearing accounts
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  transactions    TrustTransaction[]
+  clientLedgers   ClientTrustLedger[]
+  reconciliations TrustReconciliation[]
+  bankStatements  BankStatement[]
+  
+  @@index([organizationId])
+  @@index([jurisdiction])
+  @@index([isActive])
+}
+
+model ClientTrustLedger {
+  id              String   @id @default(uuid())
+  trustAccountId  String
+  clientId        String
+  matterId        String?
+  ledgerName      String   // Display name for this ledger
+  balance         Decimal  @db.Decimal(15, 2) @default(0)
+  currency        String   @default("USD")
+  status          String   @default("active") // active, dormant, closed
+  lastActivityAt  DateTime?
+  dormantSince    DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  trustAccount    TrustAccount @relation(fields: [trustAccountId], references: [id])
+  client          Contact      @relation(fields: [clientId], references: [id])
+  matter          Matter?      @relation(fields: [matterId], references: [id])
+  transactions    TrustTransaction[]
+  
+  @@unique([trustAccountId, clientId, matterId])
+  @@index([trustAccountId])
+  @@index([clientId])
+  @@index([status])
+}
+
+model TrustTransaction {
+  id              String   @id @default(uuid())
+  trustAccountId  String
+  clientLedgerId  String
+  transactionType String   // deposit, transfer_to_operating, disbursement, refund, interest
+  amount          Decimal  @db.Decimal(15, 2)
+  runningBalance  Decimal  @db.Decimal(15, 2) // Balance after this transaction
+  currency        String   @default("USD")
+  description     String
+  paymentMethod   String?  // check, wire, credit_card, ach, cash
+  checkNumber     String?
+  referenceNumber String?  // Invoice ID if transferring earned fees
+  payee           String?  // For disbursements
+  fromAccount     String?  // For transfers
+  toAccount       String?
+  transactionDate DateTime
+  postedDate      DateTime?
+  clearedDate     DateTime?
+  isCleared       Boolean  @default(false)
+  isReconciled    Boolean  @default(false)
+  reconciledDate  DateTime?
+  reconciledBy    String?
+  voidedAt        DateTime?
+  voidedBy        String?
+  voidReason      String?
+  createdBy       String
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  
+  trustAccount    TrustAccount       @relation(fields: [trustAccountId], references: [id])
+  clientLedger    ClientTrustLedger  @relation(fields: [clientLedgerId], references: [id])
+  auditLogs       TrustAuditLog[]
+  
+  @@index([trustAccountId])
+  @@index([clientLedgerId])
+  @@index([transactionDate])
+  @@index([isReconciled])
+}
+
+model TrustReconciliation {
+  id                  String   @id @default(uuid())
+  trustAccountId      String
+  reconciliationDate  DateTime
+  periodStart         DateTime
+  periodEnd           DateTime
+  bankStatementId     String?
+  bankBalance         Decimal  @db.Decimal(15, 2)
+  trustLedgerBalance  Decimal  @db.Decimal(15, 2)
+  clientLedgersTotal  Decimal  @db.Decimal(15, 2)
+  outstandingDeposits Decimal  @db.Decimal(15, 2) @default(0)
+  outstandingChecks   Decimal  @db.Decimal(15, 2) @default(0)
+  adjustedBankBalance Decimal  @db.Decimal(15, 2)
+  isBalanced          Boolean  @default(false)
+  discrepancy         Decimal? @db.Decimal(15, 2)
+  discrepancyNotes    String?
+  status              String   @default("draft") // draft, completed, approved
+  notes               String?
+  reconciledBy        String
+  approvedBy          String?
+  approvedAt          DateTime?
+  createdAt           DateTime @default(now())
+  
+  trustAccount        TrustAccount @relation(fields: [trustAccountId], references: [id])
+  bankStatement       BankStatement? @relation(fields: [bankStatementId], references: [id])
+  
+  @@index([trustAccountId])
+  @@index([reconciliationDate])
+  @@index([status])
+}
+
+model BankStatement {
+  id              String   @id @default(uuid())
+  trustAccountId  String
+  statementDate   DateTime
+  periodStart     DateTime
+  periodEnd       DateTime
+  openingBalance  Decimal  @db.Decimal(15, 2)
+  closingBalance  Decimal  @db.Decimal(15, 2)
+  totalDeposits   Decimal  @db.Decimal(15, 2)
+  totalWithdrawals Decimal @db.Decimal(15, 2)
+  fileUrl         String?  // Uploaded statement file
+  importedAt      DateTime @default(now())
+  importedBy      String
+  
+  trustAccount    TrustAccount @relation(fields: [trustAccountId], references: [id])
+  reconciliations TrustReconciliation[]
+  transactions    BankStatementTransaction[]
+  
+  @@index([trustAccountId])
+  @@index([statementDate])
+}
+
+model BankStatementTransaction {
+  id              String   @id @default(uuid())
+  bankStatementId String
+  transactionDate DateTime
+  description     String
+  amount          Decimal  @db.Decimal(15, 2)
+  transactionType String   // debit, credit
+  checkNumber     String?
+  referenceNumber String?
+  isMatched       Boolean  @default(false)
+  matchedTransactionId String?
+  
+  bankStatement   BankStatement @relation(fields: [bankStatementId], references: [id])
+  
+  @@index([bankStatementId])
+  @@index([isMatched])
+}
+
+model TrustAuditLog {
+  id                 String   @id @default(uuid())
+  trustTransactionId String?
+  eventType          String   // created, modified, voided, reconciled, approved
+  eventData          Json
+  userId             String
+  ipAddress          String?
+  userAgent          String?
+  createdAt          DateTime @default(now())
+  
+  transaction        TrustTransaction? @relation(fields: [trustTransactionId], references: [id])
+  
+  @@index([trustTransactionId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model JurisdictionRule {
+  id              String   @id @default(uuid())
+  jurisdiction    String   // "California", "New York", "England & Wales"
+  country         String
+  ruleType        String   // trust_accounting, interest_distribution, reporting
+  ruleName        String
+  ruleDescription String
+  ruleData        Json     // Specific rule parameters
+  effectiveDate   DateTime
+  expirationDate  DateTime?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  
+  @@unique([jurisdiction, ruleType, ruleName])
+  @@index([jurisdiction])
+  @@index([ruleType])
+  @@index([isActive])
+}
+
+// ============================================================================
+// PHASE 12.1.3: BILLING & INVOICING
+// ============================================================================
+
+model Invoice {
+  id              String   @id @default(uuid())
+  invoiceNumber   String   // Auto-generated: INV-2025-0001
+  organizationId  String
+  clientId        String
+  matterId        String?
+  billingType     String   // hourly, fixed_fee, contingency, hybrid
+  status          String   @default("draft") // draft, pending_approval, approved, sent, viewed, paid, overdue, cancelled, written_off
+  issueDate       DateTime
+  dueDate         DateTime
+  paymentTerms    String?  // "Net 30", "Upon Receipt", "Net 15"
+  
+  // Amounts
+  subtotal        Decimal  @db.Decimal(15, 2)
+  discountType    String?  // percentage, fixed
+  discountValue   Decimal? @db.Decimal(15, 2)
+  discountAmount  Decimal  @db.Decimal(15, 2) @default(0)
+  taxRate         Decimal? @db.Decimal(5, 4)
+  taxAmount       Decimal  @db.Decimal(15, 2) @default(0)
+  totalAmount     Decimal  @db.Decimal(15, 2)
+  paidAmount      Decimal  @db.Decimal(15, 2) @default(0)
+  balanceDue      Decimal  @db.Decimal(15, 2)
+  writeOffAmount  Decimal  @db.Decimal(15, 2) @default(0)
+  
+  // Currency
+  currency        String   @default("USD")
+  exchangeRate    Decimal? @db.Decimal(10, 6)
+  baseCurrencyTotal Decimal? @db.Decimal(15, 2)
+  
+  // LEDES/UTBMS
+  ledesFormat     Boolean  @default(false)
+  ledesVersion    String?  // "LEDES98B", "LEDES2000"
+  
+  // Metadata
+  notes           String?
+  internalNotes   String?
+  termsAndConditions String?
+  
+  // AI Predictions
+  aiPaymentProbability Int?    // 1-100
+  aiSuggestedWriteOff Decimal? @db.Decimal(15, 2)
+  
+  // Timestamps
+  sentAt          DateTime?
+  viewedAt        DateTime?
+  paidAt          DateTime?
+  lastReminderAt  DateTime?
+  reminderCount   Int      @default(0)
+  
+  createdBy       String
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization    @relation(fields: [organizationId], references: [id])
+  client          Contact         @relation(fields: [clientId], references: [id])
+  matter          Matter?         @relation(fields: [matterId], references: [id])
+  lineItems       InvoiceLineItem[]
+  payments        Payment[]
+  reminders       PaymentReminder[]
+  
+  @@unique([organizationId, invoiceNumber])
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([matterId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model InvoiceLineItem {
+  id              String   @id @default(uuid())
+  invoiceId       String
+  lineNumber      Int
+  itemType        String   // time_entry, expense, fixed_fee, adjustment, credit
+  description     String
+  quantity        Decimal  @db.Decimal(10, 2) // Hours or units
+  rate            Decimal  @db.Decimal(15, 2)
+  amount          Decimal  @db.Decimal(15, 2)
+  
+  // LEDES/UTBMS
+  utbmsTaskCode   String?  // e.g., "L110" for Fact Investigation
+  utbmsActivityCode String? // e.g., "A101" for Plan and Prepare
+  utbmsExpenseCode String?  // e.g., "E101" for Copying
+  
+  // References
+  timeEntryId     String?  @unique // Link to time entry
+  expenseId       String?  @unique // Link to expense
+  
+  // Tax
+  taxable         Boolean  @default(false)
+  taxRate         Decimal? @db.Decimal(5, 4)
+  taxAmount       Decimal  @db.Decimal(15, 2) @default(0)
+  
+  // Dates
+  serviceDate     DateTime?
+  serviceDateEnd  DateTime? // For date ranges
+  
+  createdAt       DateTime @default(now())
+  
+  invoice         Invoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  timeEntry       TimeEntry? @relation(fields: [timeEntryId], references: [id])
+  expense         Expense?   @relation(fields: [expenseId], references: [id])
+  
+  @@index([invoiceId])
+  @@index([itemType])
+}
+
+model Payment {
+  id              String   @id @default(uuid())
+  organizationId  String
+  invoiceId       String?
+  clientId        String
+  amount          Decimal  @db.Decimal(15, 2)
+  currency        String   @default("USD")
+  paymentMethod   String   // credit_card, ach, check, wire, cash, trust_transfer
+  paymentDate     DateTime
+  
+  // Payment processor
+  processorId     String?  // Stripe/LawPay payment ID
+  processorFee    Decimal? @db.Decimal(15, 2)
+  netAmount       Decimal? @db.Decimal(15, 2)
+  
+  // Check details
+  checkNumber     String?
+  bankName        String?
+  
+  // Trust transfer
+  trustTransactionId String?
+  
+  // Status
+  status          String   @default("completed") // pending, completed, failed, refunded
+  failureReason   String?
+  
+  referenceNumber String?
+  notes           String?
+  processedBy     String
+  createdAt       DateTime @default(now())
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  invoice         Invoice?     @relation(fields: [invoiceId], references: [id])
+  client          Contact      @relation(fields: [clientId], references: [id])
+  allocations     PaymentAllocation[]
+  
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([paymentDate])
+  @@index([status])
+}
+
+model PaymentAllocation {
+  id          String   @id @default(uuid())
+  paymentId   String
+  invoiceId   String
+  amount      Decimal  @db.Decimal(15, 2)
+  createdAt   DateTime @default(now())
+  
+  payment     Payment @relation(fields: [paymentId], references: [id])
+  
+  @@index([paymentId])
+  @@index([invoiceId])
+}
+
+model PaymentReminder {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  reminderType String  // first, second, final, custom
+  scheduledFor DateTime
+  sentAt      DateTime?
+  emailTo     String
+  emailSubject String
+  emailBody   String   @db.Text
+  status      String   @default("scheduled") // scheduled, sent, cancelled
+  createdAt   DateTime @default(now())
+  
+  invoice     Invoice @relation(fields: [invoiceId], references: [id])
+  
+  @@index([invoiceId])
+  @@index([scheduledFor])
+  @@index([status])
+}
+
+model BillingRate {
+  id              String   @id @default(uuid())
+  organizationId  String
+  userId          String?  // Attorney
+  clientId        String?  // Client-specific rate
+  matterId        String?  // Matter-specific rate
+  matterType      String?  // Rate by matter type
+  rateType        String   // hourly, fixed, contingency
+  rate            Decimal  @db.Decimal(15, 2)
+  currency        String   @default("USD")
+  effectiveDate   DateTime
+  expirationDate  DateTime?
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  @@index([organizationId])
+  @@index([userId])
+  @@index([clientId])
+  @@index([effectiveDate])
+}
+
+// ============================================================================
+// PHASE 12.1.4: EXPENSE MANAGEMENT & ACCOUNTS PAYABLE
+// ============================================================================
+
+model Expense {
+  id              String   @id @default(uuid())
+  expenseNumber   String   // Auto-generated: EXP-2025-0001
+  organizationId  String
+  matterId        String?
+  clientId        String?
+  userId          String   // Who incurred the expense
+  vendorId        String?
+  
+  // Expense Details
+  category        String   // court_fees, expert_witness, travel, meals, etc.
+  subcategory     String?
+  description     String
+  amount          Decimal  @db.Decimal(15, 2)
+  currency        String   @default("USD")
+  exchangeRate    Decimal? @db.Decimal(10, 6)
+  baseCurrencyAmount Decimal? @db.Decimal(15, 2)
+  taxAmount       Decimal  @db.Decimal(15, 2) @default(0)
+  
+  // Dates
+  expenseDate     DateTime
+  submittedAt     DateTime?
+  
+  // Billability
+  isBillable      Boolean  @default(true)
+  isBilled        Boolean  @default(false)
+  invoiceLineItemId String? @unique
+  markupPercent   Decimal? @db.Decimal(5, 2) // Markup for billing
+  billedAmount    Decimal? @db.Decimal(15, 2)
+  
+  // Receipt
+  receiptUrl      String?
+  receiptOcrData  Json?    // AI-extracted data
+  
+  // Mileage
+  isMileage       Boolean  @default(false)
+  mileageDistance Decimal? @db.Decimal(10, 2)
+  mileageRate     Decimal? @db.Decimal(5, 4)
+  mileageStart    String?
+  mileageEnd      String?
+  
+  // Payment
+  paymentMethod   String?  // firm_card, personal, cash, vendor_invoice
+  reimbursed      Boolean  @default(false)
+  reimbursedAt    DateTime?
+  reimbursementPaymentId String?
+  
+  // Approval
+  status          String   @default("draft") // draft, submitted, pending_approval, approved, rejected, paid
+  approvalStatus  String   @default("pending") // pending, approved, rejected
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionReason String?
+  
+  // Policy
+  policyViolation Boolean  @default(false)
+  policyViolationReason String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  matter          Matter?      @relation(fields: [matterId], references: [id])
+  client          Contact?     @relation(fields: [clientId], references: [id])
+  vendor          Vendor?      @relation(fields: [vendorId], references: [id])
+  invoiceLineItem InvoiceLineItem?
+  
+  @@unique([organizationId, expenseNumber])
+  @@index([organizationId])
+  @@index([matterId])
+  @@index([userId])
+  @@index([status])
+  @@index([expenseDate])
+}
+
+model Vendor {
+  id              String   @id @default(uuid())
+  organizationId  String
+  vendorNumber    String   // Auto-generated: VEN-0001
+  name            String
+  vendorType      String   // expert_witness, court_reporter, process_server, etc.
+  
+  // Contact
+  email           String?
+  phone           String?
+  website         String?
+  
+  // Address
+  address1        String?
+  address2        String?
+  city            String?
+  state           String?
+  postalCode      String?
+  country         String   @default("US")
+  
+  // Tax
+  taxId           String?  // Encrypted - For 1099 reporting
+  taxIdType       String?  // EIN, SSN
+  is1099Eligible  Boolean  @default(false)
+  
+  // Payment
+  paymentTerms    String?  // Net 30, Net 15, Upon Receipt
+  preferredPaymentMethod String? // check, ach, wire
+  bankAccountNumber String? // Encrypted
+  bankRoutingNumber String? // Encrypted
+  
+  // Performance
+  rating          Decimal? @db.Decimal(3, 2) // 0-5.0 stars
+  totalPaid       Decimal  @db.Decimal(15, 2) @default(0)
+  totalInvoices   Int      @default(0)
+  avgPaymentDays  Int?
+  
+  // Status
+  isPreferred     Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  notes           String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  expenses        Expense[]
+  bills           VendorBill[]
+  payments        VendorPayment[]
+  
+  @@unique([organizationId, vendorNumber])
+  @@index([organizationId])
+  @@index([vendorType])
+  @@index([isActive])
+}
+
+model VendorBill {
+  id              String   @id @default(uuid())
+  billNumber      String
+  organizationId  String
+  vendorId        String
+  matterId        String?
+  
+  // Amounts
+  subtotal        Decimal  @db.Decimal(15, 2)
+  taxAmount       Decimal  @db.Decimal(15, 2) @default(0)
+  totalAmount     Decimal  @db.Decimal(15, 2)
+  paidAmount      Decimal  @db.Decimal(15, 2) @default(0)
+  balanceDue      Decimal  @db.Decimal(15, 2)
+  currency        String   @default("USD")
+  
+  // Dates
+  billDate        DateTime
+  dueDate         DateTime
+  receivedDate    DateTime @default(now())
+  
+  // Status
+  status          String   @default("pending") // pending, approved, scheduled, paid, cancelled
+  approvalStatus  String   @default("pending")
+  approvedBy      String?
+  approvedAt      DateTime?
+  
+  // Payment
+  scheduledPaymentDate DateTime?
+  paidAt          DateTime?
+  paymentMethod   String?
+  paymentReference String?
+  
+  // Documents
+  documentUrl     String?
+  
+  notes           String?
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  vendor          Vendor       @relation(fields: [vendorId], references: [id])
+  matter          Matter?      @relation(fields: [matterId], references: [id])
+  lineItems       VendorBillLineItem[]
+  payments        VendorPayment[]
+  
+  @@index([organizationId])
+  @@index([vendorId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model VendorBillLineItem {
+  id          String   @id @default(uuid())
+  billId      String
+  description String
+  quantity    Decimal  @db.Decimal(10, 2) @default(1)
+  unitPrice   Decimal  @db.Decimal(15, 2)
+  amount      Decimal  @db.Decimal(15, 2)
+  accountId   String?  // Chart of accounts
+  matterId    String?
+  isBillable  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  
+  bill        VendorBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  
+  @@index([billId])
+}
+
+model VendorPayment {
+  id              String   @id @default(uuid())
+  organizationId  String
+  vendorId        String
+  billId          String?
+  amount          Decimal  @db.Decimal(15, 2)
+  currency        String   @default("USD")
+  paymentMethod   String   // check, ach, wire
+  paymentDate     DateTime
+  checkNumber     String?
+  referenceNumber String?
+  status          String   @default("completed")
+  notes           String?
+  processedBy     String
+  createdAt       DateTime @default(now())
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  vendor          Vendor       @relation(fields: [vendorId], references: [id])
+  bill            VendorBill?  @relation(fields: [billId], references: [id])
+  
+  @@index([organizationId])
+  @@index([vendorId])
+  @@index([billId])
+  @@index([paymentDate])
+}
+
+model ExpensePolicy {
+  id              String   @id @default(uuid())
+  organizationId  String
+  policyName      String
+  category        String?  // Apply to specific category or all
+  maxAmount       Decimal? @db.Decimal(15, 2)
+  requiresApproval Boolean @default(false)
+  approvalThreshold Decimal? @db.Decimal(15, 2)
+  requiresReceipt Boolean  @default(true)
+  receiptThreshold Decimal? @db.Decimal(15, 2)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  @@index([organizationId])
+  @@index([category])
+  @@index([isActive])
 }
