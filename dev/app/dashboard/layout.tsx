@@ -21,7 +21,9 @@ import {
   LogOut,
   Menu,
   X,
-  Search
+  Search,
+  Receipt,
+  CheckCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -146,6 +148,8 @@ export default function DashboardLayout({
     { name: 'Projects', href: '/dashboard/projects', icon: FolderOpen },
     { name: 'History', href: '/dashboard/history', icon: History },
     { name: 'Templates', href: '/dashboard/templates', icon: FileText },
+    { name: 'Finance', href: '/dashboard/finance', icon: Receipt },
+    { name: 'Approvals', href: '/dashboard/finance/approvals', icon: CheckCircle },
     { name: 'Organization', href: '/dashboard/organization', icon: Building },
     { name: 'Billing', href: '/dashboard/billing', icon: CreditCard },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },

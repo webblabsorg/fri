@@ -11,6 +11,7 @@ import {
   Clock,
   RefreshCw,
 } from 'lucide-react'
+import { useOrganization } from '@/components/providers/OrganizationProvider'
 
 interface TrustAccount {
   id: string
@@ -24,41 +25,32 @@ interface TrustAccount {
 }
 
 export default function TrustAccountsPage() {
+  const { currentOrganization } = useOrganization()
   const [accounts, setAccounts] = useState<TrustAccount[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    loadAccounts()
-  }, [])
+    if (currentOrganization?.id) {
+      loadAccounts()
+    }
+  }, [currentOrganization?.id])
 
   const loadAccounts = async () => {
+    if (!currentOrganization?.id) return
+    
     setIsLoading(true)
+    setError(null)
     try {
-      // Placeholder data - would be API call in production
-      setAccounts([
-        {
-          id: '1',
-          accountName: 'IOLTA Account - Main',
-          bankName: 'First National Bank',
-          jurisdiction: 'California',
-          currentBalance: 125000.00,
-          lastReconciledDate: '2024-12-01',
-          clientLedgerCount: 24,
-          isActive: true,
-        },
-        {
-          id: '2',
-          accountName: 'Client Trust - NY',
-          bankName: 'Chase Bank',
-          jurisdiction: 'New York',
-          currentBalance: 45000.00,
-          lastReconciledDate: '2024-11-15',
-          clientLedgerCount: 8,
-          isActive: true,
-        },
-      ])
-    } catch (error) {
-      console.error('Error loading accounts:', error)
+      const response = await fetch(`/api/trust/accounts?organizationId=${currentOrganization.id}`)
+      if (!response.ok) {
+        throw new Error('Failed to load trust accounts')
+      }
+      const data = await response.json()
+      setAccounts(data.accounts || [])
+    } catch (err) {
+      console.error('Error loading accounts:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load accounts')
     } finally {
       setIsLoading(false)
     }
@@ -147,7 +139,18 @@ export default function TrustAccountsPage() {
             <h2 className="text-lg font-semibold text-white">Trust Accounts</h2>
           </div>
 
-          {isLoading ? (
+          {error ? (
+            <div className="p-8 text-center">
+              <AlertTriangle className="h-8 w-8 text-red-400 mx-auto mb-2" />
+              <p className="text-red-400">{error}</p>
+              <button
+                onClick={loadAccounts}
+                className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-white"
+              >
+                Retry
+              </button>
+            </div>
+          ) : isLoading ? (
             <div className="p-8 text-center text-gray-400">
               <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
               Loading accounts...

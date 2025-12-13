@@ -96,9 +96,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    if (!vendorId || !billNumber || !subtotal || !billDate || !dueDate) {
+    if (!vendorId || !subtotal || !billDate || !dueDate) {
       return NextResponse.json(
-        { error: 'Vendor, bill number, subtotal, bill date, and due date are required' },
+        { error: 'Vendor, subtotal, bill date, and due date are required' },
         { status: 400 }
       )
     }

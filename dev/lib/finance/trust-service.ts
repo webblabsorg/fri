@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db'
 import { Decimal } from '@prisma/client/runtime/library'
 import { createTrustDepositJournalEntry, createTrustDisbursementJournalEntry } from './accounting-automation'
+import { encrypt, decrypt, mask } from '@/lib/security/crypto'
 
 // ============================================================================
 // TRUST ACCOUNT SERVICE
@@ -20,13 +21,17 @@ export interface CreateTrustAccountInput {
 }
 
 export async function createTrustAccount(input: CreateTrustAccountInput) {
+  // Encrypt sensitive bank account information
+  const encryptedAccountNumber = encrypt(input.accountNumber)
+  const encryptedRoutingNumber = input.routingNumber ? encrypt(input.routingNumber) : undefined
+
   return prisma.trustAccount.create({
     data: {
       organizationId: input.organizationId,
       accountName: input.accountName,
       bankName: input.bankName,
-      accountNumber: input.accountNumber,
-      routingNumber: input.routingNumber,
+      accountNumber: encryptedAccountNumber,
+      routingNumber: encryptedRoutingNumber,
       accountType: input.accountType || 'IOLTA',
       currency: input.currency || 'USD',
       jurisdiction: input.jurisdiction,
@@ -65,8 +70,8 @@ export async function getTrustAccounts(organizationId: string, options?: {
   })
 }
 
-export async function getTrustAccountById(id: string, organizationId: string) {
-  return prisma.trustAccount.findFirst({
+export async function getTrustAccountById(id: string, organizationId: string, options?: { decryptSensitive?: boolean }) {
+  const account = await prisma.trustAccount.findFirst({
     where: { id, organizationId },
     include: {
       clientLedgers: {
@@ -78,12 +83,30 @@ export async function getTrustAccountById(id: string, organizationId: string) {
       },
     },
   })
+
+  if (!account) return null
+
+  // Return masked values by default, decrypt only if explicitly requested
+  if (options?.decryptSensitive) {
+    return {
+      ...account,
+      accountNumber: decrypt(account.accountNumber),
+      routingNumber: account.routingNumber ? decrypt(account.routingNumber) : null,
+    }
+  }
+
+  // Return masked values for display
+  return {
+    ...account,
+    accountNumber: mask(decrypt(account.accountNumber)),
+    routingNumber: account.routingNumber ? mask(decrypt(account.routingNumber)) : null,
+  }
 }
 
 export async function updateTrustAccount(
   id: string,
   organizationId: string,
-  data: Partial<CreateTrustAccountInput>
+  data: Partial<CreateTrustAccountInput> & { isActive?: boolean }
 ) {
   return prisma.trustAccount.update({
     where: { id },
@@ -93,6 +116,8 @@ export async function updateTrustAccount(
       jurisdiction: data.jurisdiction,
       stateBarId: data.stateBarId,
       interestRate: data.interestRate ? new Decimal(data.interestRate) : undefined,
+      accountType: data.accountType,
+      isActive: data.isActive,
     },
   })
 }
@@ -1433,7 +1458,7 @@ export async function calculateInterestDistribution(
         }
 
         // Update running balance
-        if (['deposit', 'interest', 'transfer_in'].includes(txn.transactionType)) {
+        if (['deposit', 'interest'].includes(txn.transactionType)) {
           runningBalance += Number(txn.amount)
         } else {
           runningBalance -= Number(txn.amount)
@@ -1506,50 +1531,69 @@ export async function recordInterestDistribution(
 ): Promise<{ transactionIds: string[] }> {
   const transactionIds: string[] = []
 
-  // For IOLTA accounts, record single interest transaction to operating
+  // For IOLTA accounts, interest is remitted to state bar foundation
+  // We record this as an audit log entry rather than a client ledger transaction
+  // since IOLTA interest doesn't belong to any specific client
   if (report.ioltaRemittance && report.totalInterestEarned > 0) {
+    // Record IOLTA remittance in audit log (not as client transaction)
+    await prisma.trustAuditLog.create({
+      data: {
+        eventType: 'iolta_interest_remittance',
+        eventData: {
+          trustAccountId,
+          periodStart: report.periodStart.toISOString(),
+          periodEnd: report.periodEnd.toISOString(),
+          totalInterestEarned: report.totalInterestEarned,
+          recipientName: report.ioltaRemittance.recipientName,
+          allocations: report.allocations.map(a => ({
+            clientLedgerId: a.clientLedgerId,
+            clientName: a.clientName,
+            averageDailyBalance: a.averageDailyBalance,
+            interestEarned: a.interestEarned,
+          })),
+        },
+        userId: createdBy,
+      },
+    })
+    // Return empty array - IOLTA interest doesn't create client transactions
+    return { transactionIds: [] }
+  }
+
+  // For non-IOLTA accounts, distribute interest to each client ledger
+  for (const alloc of report.allocations) {
+    if (alloc.interestEarned <= 0) continue
+
+    const ledger = await prisma.clientTrustLedger.findUnique({
+      where: { id: alloc.clientLedgerId },
+    })
+    if (!ledger) continue
+
+    const currentBalance = Number(ledger.balance)
+    const newBalance = currentBalance + alloc.interestEarned
+
     const txn = await prisma.trustTransaction.create({
       data: {
         trustAccountId,
-        clientLedgerId: report.allocations[0]?.clientLedgerId, // Use first ledger as placeholder
+        clientLedgerId: alloc.clientLedgerId,
         transactionType: 'interest',
-        amount: new Decimal(report.totalInterestEarned),
+        amount: new Decimal(alloc.interestEarned),
         description: `Interest earned ${report.periodStart.toISOString().split('T')[0]} to ${report.periodEnd.toISOString().split('T')[0]}`,
         transactionDate: report.periodEnd,
-        payee: report.ioltaRemittance.recipientName,
         createdBy,
-        runningBalance: new Decimal(0), // Will be updated
+        runningBalance: new Decimal(newBalance),
       },
     })
     transactionIds.push(txn.id)
-  } else {
-    // For non-IOLTA, distribute interest to each client ledger
-    for (const alloc of report.allocations) {
-      if (alloc.interestEarned <= 0) continue
 
-      const txn = await prisma.trustTransaction.create({
-        data: {
-          trustAccountId,
-          clientLedgerId: alloc.clientLedgerId,
-          transactionType: 'interest',
-          amount: new Decimal(alloc.interestEarned),
-          description: `Interest earned ${report.periodStart.toISOString().split('T')[0]} to ${report.periodEnd.toISOString().split('T')[0]}`,
-          transactionDate: report.periodEnd,
-          createdBy,
-          runningBalance: new Decimal(0), // Will be updated
-        },
-      })
-      transactionIds.push(txn.id)
-
-      // Update client ledger balance
-      await prisma.clientTrustLedger.update({
-        where: { id: alloc.clientLedgerId },
-        data: {
-          balance: { increment: alloc.interestEarned },
-        },
-      })
-    }
+    // Update client ledger balance
+    await prisma.clientTrustLedger.update({
+      where: { id: alloc.clientLedgerId },
+      data: {
+        balance: { increment: alloc.interestEarned },
+      },
+    })
   }
 
   return { transactionIds }
 }
+

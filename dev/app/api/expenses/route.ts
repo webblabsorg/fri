@@ -144,19 +144,30 @@ export async function POST(request: NextRequest) {
       paymentMethod,
     })
 
+    // Update expense based on policy check results
+    const updateData: Record<string, unknown> = {}
+    
     if (!policyCheck.valid) {
+      updateData.policyViolation = true
+      updateData.policyViolationReason = policyCheck.violations.join('; ')
+    }
+
+    // If policy requires approval, set status to pending_approval
+    if (policyCheck.requiresApproval) {
+      updateData.status = 'pending_approval'
+    }
+
+    if (Object.keys(updateData).length > 0) {
       await prisma.expense.update({
         where: { id: expense.id },
-        data: {
-          policyViolation: true,
-          policyViolationReason: policyCheck.violations.join('; '),
-        },
+        data: updateData,
       })
     }
 
     return NextResponse.json({
-      expense,
+      expense: { ...expense, ...updateData },
       policyWarnings: policyCheck.violations,
+      requiresApproval: policyCheck.requiresApproval,
     }, { status: 201 })
   } catch (error) {
     console.error('Error creating expense:', error)

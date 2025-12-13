@@ -2,6 +2,8 @@ import { prisma } from '@/lib/db'
 import { Decimal } from '@prisma/client/runtime/library'
 import { createExpenseJournalEntry, createVendorBillJournalEntry, createVendorPaymentJournalEntry } from './accounting-automation'
 import { categorizeExpense, learnFromCorrection } from './ai-financial-service'
+import { getExchangeRate } from './exchange-rate-service'
+import { getOrganizationMileageRate, calculateMileageAmount } from './mileage-service'
 
 // ============================================================================
 // EXPENSE SERVICE
@@ -48,8 +50,17 @@ export async function createExpense(input: CreateExpenseInput) {
   const expenseNumber = await generateExpenseNumber(input.organizationId)
 
   let amount = input.amount
-  if (input.isMileage && input.mileageDistance && input.mileageRate) {
-    amount = input.mileageDistance * input.mileageRate
+  let appliedMileageRate: number | null = null
+  
+  if (input.isMileage && input.mileageDistance) {
+    // Use provided rate or fetch IRS/organization rate
+    if (input.mileageRate) {
+      appliedMileageRate = input.mileageRate
+    } else {
+      const rateInfo = await getOrganizationMileageRate(input.organizationId)
+      appliedMileageRate = rateInfo.ratePerMile
+    }
+    amount = calculateMileageAmount(input.mileageDistance, appliedMileageRate)
   }
 
   // AI auto-categorization if enabled and category not provided
@@ -87,6 +98,21 @@ export async function createExpense(input: CreateExpenseInput) {
     category = 'other'
   }
 
+  // Multi-currency support: compute exchange rate and base currency amount
+  const expenseCurrency = input.currency || 'USD'
+  const baseCurrency = 'USD' // Organization base currency defaults to USD
+  let exchangeRate: number | null = null
+  let baseCurrencyAmount: number | null = null
+
+  if (expenseCurrency !== baseCurrency) {
+    try {
+      exchangeRate = await getExchangeRate(expenseCurrency, baseCurrency)
+      baseCurrencyAmount = amount * exchangeRate
+    } catch (err) {
+      console.warn('Failed to get exchange rate, storing without conversion:', err)
+    }
+  }
+
   return prisma.expense.create({
     data: {
       expenseNumber,
@@ -99,7 +125,9 @@ export async function createExpense(input: CreateExpenseInput) {
       subcategory,
       description: input.description,
       amount: new Decimal(amount),
-      currency: input.currency || 'USD',
+      currency: expenseCurrency,
+      exchangeRate: exchangeRate ? new Decimal(exchangeRate) : null,
+      baseCurrencyAmount: baseCurrencyAmount ? new Decimal(baseCurrencyAmount) : null,
       taxAmount: new Decimal(input.taxAmount || 0),
       expenseDate: input.expenseDate,
       isBillable: isBillable ?? true,
@@ -108,7 +136,7 @@ export async function createExpense(input: CreateExpenseInput) {
       receiptOcrData: aiCategorizationData ? JSON.stringify(aiCategorizationData) : undefined,
       isMileage: input.isMileage || false,
       mileageDistance: input.mileageDistance ? new Decimal(input.mileageDistance) : null,
-      mileageRate: input.mileageRate ? new Decimal(input.mileageRate) : null,
+      mileageRate: appliedMileageRate ? new Decimal(appliedMileageRate) : (input.mileageRate ? new Decimal(input.mileageRate) : null),
       mileageStart: input.mileageStart,
       mileageEnd: input.mileageEnd,
       paymentMethod: input.paymentMethod,
@@ -457,6 +485,12 @@ export async function updateVendor(
   organizationId: string,
   data: Partial<CreateVendorInput>
 ) {
+  const vendor = await prisma.vendor.findFirst({
+    where: { id, organizationId },
+  })
+  if (!vendor) {
+    throw new Error('Vendor not found')
+  }
   return prisma.vendor.update({
     where: { id },
     data,
@@ -464,6 +498,12 @@ export async function updateVendor(
 }
 
 export async function deactivateVendor(id: string, organizationId: string) {
+  const vendor = await prisma.vendor.findFirst({
+    where: { id, organizationId },
+  })
+  if (!vendor) {
+    throw new Error('Vendor not found')
+  }
   return prisma.vendor.update({
     where: { id },
     data: { isActive: false },
@@ -478,7 +518,7 @@ export interface CreateVendorBillInput {
   organizationId: string
   vendorId: string
   matterId?: string
-  billNumber: string
+  billNumber?: string
   subtotal: number
   taxAmount?: number
   billDate: Date
@@ -496,43 +536,67 @@ export interface CreateVendorBillInput {
   }[]
 }
 
+export async function generateVendorBillNumber(organizationId: string): Promise<string> {
+  const year = new Date().getFullYear()
+  const count = await prisma.vendorBill.count({
+    where: {
+      organizationId,
+      billNumber: { startsWith: `BILL-${year}-` },
+    },
+  })
+  return `BILL-${year}-${String(count + 1).padStart(4, '0')}`
+}
+
 export async function createVendorBill(input: CreateVendorBillInput) {
   const totalAmount = input.subtotal + (input.taxAmount || 0)
 
-  const bill = await prisma.vendorBill.create({
-    data: {
-      billNumber: input.billNumber,
-      organizationId: input.organizationId,
-      vendorId: input.vendorId,
-      matterId: input.matterId,
-      subtotal: new Decimal(input.subtotal),
-      taxAmount: new Decimal(input.taxAmount || 0),
-      totalAmount: new Decimal(totalAmount),
-      balanceDue: new Decimal(totalAmount),
-      billDate: input.billDate,
-      dueDate: input.dueDate,
-      documentUrl: input.documentUrl,
-      notes: input.notes,
-      status: 'pending',
-      approvalStatus: 'pending',
-      createdBy: input.createdBy,
-      lineItems: {
-        create: input.lineItems.map((item) => ({
-          description: item.description,
-          quantity: new Decimal(item.quantity || 1),
-          unitPrice: new Decimal(item.unitPrice),
-          amount: new Decimal((item.quantity || 1) * item.unitPrice),
-          accountId: item.accountId,
-          matterId: item.matterId,
-          isBillable: item.isBillable || false,
-        })),
+  // Auto-generate bill number if not provided
+  const billNumber = input.billNumber || await generateVendorBillNumber(input.organizationId)
+
+  const bill = await prisma.$transaction(async (tx) => {
+    const newBill = await tx.vendorBill.create({
+      data: {
+        billNumber,
+        organizationId: input.organizationId,
+        vendorId: input.vendorId,
+        matterId: input.matterId,
+        subtotal: new Decimal(input.subtotal),
+        taxAmount: new Decimal(input.taxAmount || 0),
+        totalAmount: new Decimal(totalAmount),
+        balanceDue: new Decimal(totalAmount),
+        billDate: input.billDate,
+        dueDate: input.dueDate,
+        documentUrl: input.documentUrl,
+        notes: input.notes,
+        status: 'pending',
+        approvalStatus: 'pending',
+        createdBy: input.createdBy,
+        lineItems: {
+          create: input.lineItems.map((item) => ({
+            description: item.description,
+            quantity: new Decimal(item.quantity || 1),
+            unitPrice: new Decimal(item.unitPrice),
+            amount: new Decimal((item.quantity || 1) * item.unitPrice),
+            accountId: item.accountId,
+            matterId: item.matterId,
+            isBillable: item.isBillable || false,
+          })),
+        },
       },
-    },
-    include: {
-      vendor: true,
-      matter: true,
-      lineItems: true,
-    },
+      include: {
+        vendor: true,
+        matter: true,
+        lineItems: true,
+      },
+    })
+
+    // Increment vendor totalInvoices on bill creation
+    await tx.vendor.update({
+      where: { id: input.vendorId },
+      data: { totalInvoices: { increment: 1 } },
+    })
+
+    return newBill
   })
 
   // Create accounting journal entry for vendor bill
@@ -684,11 +748,22 @@ export async function payVendorBill(
       },
     })
 
+    // Update vendor metrics - use billDate (not createdAt) for accurate payment days calculation
+    const billDate = new Date(bill.billDate)
+    const paymentDays = Math.floor((paymentData.paymentDate.getTime() - billDate.getTime()) / (1000 * 60 * 60 * 24))
+    
+    const vendor = await tx.vendor.findUnique({ where: { id: bill.vendorId } })
+    const currentAvg = vendor?.avgPaymentDays || 0
+    const currentCount = vendor?.totalInvoices || 0
+    const newAvg = currentCount > 0 
+      ? Math.round((currentAvg * currentCount + paymentDays) / (currentCount + 1))
+      : paymentDays
+
     await tx.vendor.update({
       where: { id: bill.vendorId },
       data: {
         totalPaid: { increment: paymentData.amount },
-        totalInvoices: { increment: 1 },
+        avgPaymentDays: newAvg,
       },
     })
 
@@ -754,7 +829,7 @@ export async function checkExpensePolicy(
   category: string,
   amount: number,
   hasReceipt: boolean
-): Promise<{ valid: boolean; violations: string[] }> {
+): Promise<{ valid: boolean; violations: string[]; requiresApproval: boolean }> {
   const policies = await prisma.expensePolicy.findMany({
     where: {
       organizationId,
@@ -764,6 +839,7 @@ export async function checkExpensePolicy(
   })
 
   const violations: string[] = []
+  let requiresApproval = false
 
   for (const policy of policies) {
     if (policy.maxAmount && amount > Number(policy.maxAmount)) {
@@ -776,12 +852,142 @@ export async function checkExpensePolicy(
         violations.push(`Receipt required for expenses over $${threshold}`)
       }
     }
+
+    if (policy.requiresApproval) {
+      const approvalThreshold = policy.approvalThreshold ? Number(policy.approvalThreshold) : 0
+      if (amount >= approvalThreshold) {
+        requiresApproval = true
+      }
+    }
   }
 
   return {
     valid: violations.length === 0,
     violations,
+    requiresApproval,
   }
+}
+
+// ============================================================================
+// DUPLICATE EXPENSE DETECTION
+// ============================================================================
+
+export interface DuplicateCheckResult {
+  hasPotentialDuplicates: boolean
+  duplicates: Array<{
+    id: string
+    expenseNumber: string
+    description: string
+    amount: number
+    expenseDate: Date
+    similarity: number
+  }>
+}
+
+export async function checkForDuplicateExpense(
+  organizationId: string,
+  description: string,
+  amount: number,
+  expenseDate: Date,
+  vendorId?: string,
+  excludeExpenseId?: string
+): Promise<DuplicateCheckResult> {
+  // Look for potential duplicates within a configurable time window
+  const windowDays = 7
+  const startDate = new Date(expenseDate)
+  startDate.setDate(startDate.getDate() - windowDays)
+  const endDate = new Date(expenseDate)
+  endDate.setDate(endDate.getDate() + windowDays)
+
+  // Amount tolerance: within 5% or $1, whichever is greater
+  const amountTolerance = Math.max(amount * 0.05, 1)
+  const minAmount = amount - amountTolerance
+  const maxAmount = amount + amountTolerance
+
+  const where: Record<string, unknown> = {
+    organizationId,
+    expenseDate: { gte: startDate, lte: endDate },
+    amount: { gte: minAmount, lte: maxAmount },
+  }
+
+  if (vendorId) {
+    where.vendorId = vendorId
+  }
+
+  if (excludeExpenseId) {
+    where.id = { not: excludeExpenseId }
+  }
+
+  const potentialDuplicates = await prisma.expense.findMany({
+    where,
+    select: {
+      id: true,
+      expenseNumber: true,
+      description: true,
+      amount: true,
+      expenseDate: true,
+      vendorId: true,
+    },
+  })
+
+  // Calculate similarity scores
+  const duplicates = potentialDuplicates
+    .map((expense) => {
+      let similarity = 0
+
+      // Amount similarity (up to 40 points)
+      const amountDiff = Math.abs(Number(expense.amount) - amount)
+      const amountSimilarity = Math.max(0, 40 - (amountDiff / amount) * 100)
+      similarity += amountSimilarity
+
+      // Date similarity (up to 30 points)
+      const daysDiff = Math.abs(
+        (expense.expenseDate.getTime() - expenseDate.getTime()) / (1000 * 60 * 60 * 24)
+      )
+      const dateSimilarity = Math.max(0, 30 - daysDiff * 5)
+      similarity += dateSimilarity
+
+      // Description similarity (up to 30 points)
+      const descSimilarity = calculateStringSimilarity(
+        description.toLowerCase(),
+        expense.description.toLowerCase()
+      )
+      similarity += descSimilarity * 30
+
+      return {
+        id: expense.id,
+        expenseNumber: expense.expenseNumber,
+        description: expense.description,
+        amount: Number(expense.amount),
+        expenseDate: expense.expenseDate,
+        similarity: Math.round(similarity),
+      }
+    })
+    .filter((d) => d.similarity >= 50) // Only flag if >= 50% similar
+    .sort((a, b) => b.similarity - a.similarity)
+
+  return {
+    hasPotentialDuplicates: duplicates.length > 0,
+    duplicates,
+  }
+}
+
+function calculateStringSimilarity(str1: string, str2: string): number {
+  if (str1 === str2) return 1
+  if (str1.length === 0 || str2.length === 0) return 0
+
+  // Simple word overlap similarity
+  const words1 = new Set(str1.split(/\s+/).filter((w) => w.length > 2))
+  const words2 = new Set(str2.split(/\s+/).filter((w) => w.length > 2))
+
+  if (words1.size === 0 || words2.size === 0) return 0
+
+  let overlap = 0
+  for (const word of words1) {
+    if (words2.has(word)) overlap++
+  }
+
+  return (2 * overlap) / (words1.size + words2.size)
 }
 
 // ============================================================================
@@ -999,7 +1205,10 @@ export async function uploadReceipt(
   })
 }
 
-export async function processReceiptOcr(receiptUrl: string): Promise<ReceiptOcrResult> {
+export async function processReceiptOcr(
+  receiptUrl: string,
+  imageBase64?: string
+): Promise<ReceiptOcrResult> {
   const apiKey = process.env.GOOGLE_VISION_API_KEY
   if (!apiKey) {
     return {
@@ -1013,6 +1222,26 @@ export async function processReceiptOcr(receiptUrl: string): Promise<ReceiptOcrR
     }
   }
 
+  // Build image payload: use base64 content for local files, imageUri for remote URLs
+  let imagePayload: { content?: string; source?: { imageUri: string } }
+  if (imageBase64) {
+    imagePayload = { content: imageBase64 }
+  } else if (receiptUrl.startsWith('http://') || receiptUrl.startsWith('https://')) {
+    imagePayload = { source: { imageUri: receiptUrl } }
+  } else {
+    // Local path that isn't publicly accessible - cannot use imageUri
+    return {
+      vendorName: undefined,
+      amount: undefined,
+      date: undefined,
+      taxAmount: undefined,
+      category: undefined,
+      confidence: 0,
+      provider: 'none',
+      error: 'local_file_requires_base64',
+    }
+  }
+
   const response = await fetch(
     `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(apiKey)}`,
     {
@@ -1021,7 +1250,7 @@ export async function processReceiptOcr(receiptUrl: string): Promise<ReceiptOcrR
       body: JSON.stringify({
         requests: [
           {
-            image: { source: { imageUri: receiptUrl } },
+            image: imagePayload,
             features: [{ type: 'TEXT_DETECTION' }],
           },
         ],

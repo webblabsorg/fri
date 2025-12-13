@@ -7,6 +7,7 @@ import {
   handleOrganizationSuccessfulPayment,
   handleOrganizationSubscriptionCancellation,
 } from '@/lib/stripe/stripe-service'
+import { handleStripeInvoicePayment } from '@/lib/finance/billing-service'
 import Stripe from 'stripe'
 
 // Disable body parsing - Stripe needs raw body for webhook verification
@@ -40,8 +41,20 @@ export async function POST(request: NextRequest) {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session
+        
+        // Handle invoice payments (from /pay/[token] checkout)
+        if (session.metadata?.invoiceId) {
+          const amountPaid = (session.amount_total || 0) / 100
+          await handleStripeInvoicePayment(
+            session.metadata.invoiceId,
+            session.id,
+            amountPaid
+          )
+          break
+        }
+        
+        // Handle subscription payments
         if (session.subscription && session.customer) {
-          // Check if this is an organization subscription
           const isOrganization = session.metadata?.type === 'organization'
           
           if (isOrganization) {

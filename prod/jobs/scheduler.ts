@@ -7,6 +7,8 @@
 
 import { PrismaClient } from '@prisma/client'
 import { executeWorkflow } from '../../dev/lib/workflows/engine'
+import { processDueReconciliations } from '../../dev/lib/finance/daily-reconciliation-scheduler'
+import { sendInvoiceReminder } from '../../dev/lib/finance/billing-service'
 
 const prisma = new PrismaClient()
 
@@ -104,6 +106,12 @@ export class JobScheduler {
         result = await this.executeTool(job)
       } else if (job.type === 'workflow') {
         result = await this.executeWorkflowJob(job)
+      } else if (job.type === 'trust_reconciliation') {
+        result = await this.executeTrustReconciliation(job)
+      } else if (job.type === 'payment_reminders') {
+        result = await this.executePaymentReminders(job)
+      } else if (job.type === 'scheduled_vendor_payments') {
+        result = await this.executeScheduledVendorPayments(job)
       } else {
         throw new Error(`Unknown job type: ${job.type}`)
       }
@@ -180,6 +188,185 @@ export class JobScheduler {
       workflowRunId: workflowRun.id,
       status: workflowRun.status,
       results: workflowRun.results,
+    }
+  }
+
+  /**
+   * Execute trust reconciliation job
+   * This processes all due automated reconciliations for trust accounts
+   */
+  private async executeTrustReconciliation(job: ScheduledJob): Promise<any> {
+    console.log(`[Scheduler] Running trust reconciliation job`)
+    
+    try {
+      const results = await processDueReconciliations()
+      
+      return {
+        jobType: 'trust_reconciliation',
+        processedCount: results.length,
+        results: results.map(r => ({
+          trustAccountId: r.trustAccountId,
+          reconciliationId: r.reconciliationId,
+          status: r.status,
+        })),
+      }
+    } catch (error) {
+      console.error('[Scheduler] Trust reconciliation failed:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Execute payment reminders job
+   * Sends due payment reminders for overdue invoices
+   */
+  private async executePaymentReminders(job: ScheduledJob): Promise<any> {
+    console.log(`[Scheduler] Running payment reminders job`)
+    
+    try {
+      const now = new Date()
+      
+      // Find due reminders
+      const dueReminders = await prisma.paymentReminder.findMany({
+        where: {
+          status: 'scheduled',
+          scheduledFor: { lte: now },
+        },
+        include: {
+          invoice: {
+            select: {
+              id: true,
+              invoiceNumber: true,
+              status: true,
+              balanceDue: true,
+            },
+          },
+        },
+      })
+
+      let sent = 0
+      let skipped = 0
+
+      for (const reminder of dueReminders) {
+        try {
+          const result = await sendInvoiceReminder(reminder.id)
+          if (result.status === 'cancelled') {
+            console.log(`[Scheduler] Cancelled reminder for paid invoice ${reminder.invoice.invoiceNumber}`)
+            skipped++
+          } else {
+            console.log(`[Scheduler] Sent reminder for invoice ${reminder.invoice.invoiceNumber}`)
+            sent++
+          }
+        } catch (error) {
+          console.error(`[Scheduler] Failed to send reminder ${reminder.id}:`, error)
+          skipped++
+        }
+      }
+
+      return {
+        jobType: 'payment_reminders',
+        processed: dueReminders.length,
+        sent,
+        skipped,
+      }
+    } catch (error) {
+      console.error('[Scheduler] Payment reminders job failed:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Execute scheduled vendor payments job
+   * Processes vendor bills that are scheduled for payment today
+   */
+  private async executeScheduledVendorPayments(job: ScheduledJob): Promise<any> {
+    console.log(`[Scheduler] Running scheduled vendor payments job`)
+    
+    try {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      
+      // Find bills scheduled for payment today
+      const scheduledBills = await prisma.vendorBill.findMany({
+        where: {
+          status: 'scheduled',
+          scheduledPaymentDate: {
+            gte: today,
+            lt: tomorrow,
+          },
+          balanceDue: { gt: 0 },
+        },
+        include: {
+          vendor: true,
+          organization: true,
+        },
+      })
+
+      let processed = 0
+      let failed = 0
+      const results: Array<{ billId: string; status: string; error?: string }> = []
+
+      for (const bill of scheduledBills) {
+        try {
+          // Create payment record
+          const payment = await prisma.$transaction(async (tx) => {
+            const pmt = await tx.vendorPayment.create({
+              data: {
+                organizationId: bill.organizationId,
+                vendorId: bill.vendorId,
+                billId: bill.id,
+                amount: bill.balanceDue,
+                paymentMethod: bill.vendor.preferredPaymentMethod || 'ach',
+                paymentDate: new Date(),
+                status: 'completed',
+                processedBy: job.createdById,
+                notes: 'Scheduled automatic payment',
+              },
+            })
+
+            await tx.vendorBill.update({
+              where: { id: bill.id },
+              data: {
+                paidAmount: bill.totalAmount,
+                balanceDue: 0,
+                status: 'paid',
+                paidAt: new Date(),
+                paymentMethod: bill.vendor.preferredPaymentMethod || 'ach',
+              },
+            })
+
+            await tx.vendor.update({
+              where: { id: bill.vendorId },
+              data: {
+                totalPaid: { increment: Number(bill.balanceDue) },
+              },
+            })
+
+            return pmt
+          })
+
+          console.log(`[Scheduler] Processed scheduled payment for bill ${bill.billNumber}`)
+          processed++
+          results.push({ billId: bill.id, status: 'paid' })
+        } catch (error) {
+          console.error(`[Scheduler] Failed to process scheduled payment for bill ${bill.id}:`, error)
+          failed++
+          results.push({ billId: bill.id, status: 'failed', error: (error as Error).message })
+        }
+      }
+
+      return {
+        jobType: 'scheduled_vendor_payments',
+        totalScheduled: scheduledBills.length,
+        processed,
+        failed,
+        results,
+      }
+    } catch (error) {
+      console.error('[Scheduler] Scheduled vendor payments job failed:', error)
+      throw error
     }
   }
 

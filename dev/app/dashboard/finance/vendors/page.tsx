@@ -13,6 +13,7 @@ import {
   CheckCircle,
   XCircle,
 } from 'lucide-react'
+import { useOrganization } from '@/components/providers/OrganizationProvider'
 
 interface Vendor {
   id: string
@@ -26,50 +27,41 @@ interface Vendor {
 }
 
 export default function VendorsPage() {
+  const { currentOrganization } = useOrganization()
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [showActiveOnly, setShowActiveOnly] = useState(true)
 
   useEffect(() => {
-    loadVendors()
-  }, [showActiveOnly])
+    if (currentOrganization?.id) {
+      loadVendors()
+    }
+  }, [showActiveOnly, currentOrganization?.id])
 
   const loadVendors = async () => {
+    if (!currentOrganization?.id) return
     setIsLoading(true)
     try {
-      setVendors([
-        {
-          id: '1',
-          vendorNumber: 'V-001',
-          name: 'Legal Research Services Inc.',
-          email: 'billing@legalresearch.com',
-          phone: '(555) 123-4567',
-          isActive: true,
-          is1099Eligible: true,
-          totalPaid: 15750.00,
-        },
-        {
-          id: '2',
-          vendorNumber: 'V-002',
-          name: 'Court Reporting Associates',
-          email: 'invoices@courtreporting.com',
-          phone: '(555) 234-5678',
-          isActive: true,
-          is1099Eligible: true,
-          totalPaid: 8500.00,
-        },
-        {
-          id: '3',
-          vendorNumber: 'V-003',
-          name: 'Office Supply Co.',
-          email: 'orders@officesupply.com',
-          phone: '(555) 345-6789',
-          isActive: true,
-          is1099Eligible: false,
-          totalPaid: 2350.00,
-        },
-      ])
+      const activeParam = showActiveOnly ? '&isActive=true' : ''
+      const res = await fetch(`/api/vendors?organizationId=${currentOrganization.id}${activeParam}&limit=100`)
+      if (!res.ok) throw new Error('Failed to fetch vendors')
+      const data = await res.json()
+
+      setVendors(
+        (data.vendors || []).map((v: any) => ({
+          id: v.id,
+          vendorNumber: v.vendorNumber,
+          name: v.name,
+          email: v.email,
+          phone: v.phone,
+          isActive: v.isActive,
+          is1099Eligible: v.is1099Eligible,
+          totalPaid: Number(v.totalPaid),
+        }))
+      )
+    } catch (error) {
+      console.error('Error loading vendors:', error)
     } finally {
       setIsLoading(false)
     }

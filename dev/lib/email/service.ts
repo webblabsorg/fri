@@ -70,7 +70,7 @@ export async function getUserOrganizationId(userId: string): Promise<string | nu
 /**
  * Send email using configured provider
  */
-async function sendEmail(options: SendEmailOptions): Promise<boolean> {
+export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
   const { to, subject, html, text } = options
 
   // Use environment-configured email provider

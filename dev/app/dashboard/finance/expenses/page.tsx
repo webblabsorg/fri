@@ -13,7 +13,10 @@ import {
   XCircle,
   DollarSign,
   Upload,
+  AlertCircle,
+  Send,
 } from 'lucide-react'
+import { useOrganization } from '@/components/providers/OrganizationProvider'
 
 interface Expense {
   id: string
@@ -27,50 +30,41 @@ interface Expense {
 }
 
 export default function ExpensesPage() {
+  const { currentOrganization, isLoading: orgLoading } = useOrganization()
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    loadExpenses()
-  }, [filter])
+    if (currentOrganization?.id) {
+      loadExpenses()
+    }
+  }, [filter, currentOrganization?.id])
 
   const loadExpenses = async () => {
+    if (!currentOrganization?.id) return
     setIsLoading(true)
     try {
-      setExpenses([
-        {
-          id: '1',
-          description: 'Client meeting lunch',
-          category: 'meals',
-          amount: 85.50,
-          expenseDate: '2024-01-15',
-          status: 'approved',
-          isBillable: true,
-          matterName: 'Corporate Restructuring',
-        },
-        {
-          id: '2',
-          description: 'Court filing fees',
-          category: 'filing_fees',
-          amount: 450.00,
-          expenseDate: '2024-01-14',
-          status: 'pending',
-          isBillable: true,
-          matterName: 'Smith v. Jones',
-        },
-        {
-          id: '3',
-          description: 'Office supplies',
-          category: 'supplies',
-          amount: 125.00,
-          expenseDate: '2024-01-13',
-          status: 'draft',
-          isBillable: false,
-          matterName: null,
-        },
-      ])
+      const statusParam = filter !== 'all' ? `&status=${filter}` : ''
+      const res = await fetch(`/api/expenses?organizationId=${currentOrganization.id}${statusParam}&limit=100`)
+      if (!res.ok) throw new Error('Failed to fetch expenses')
+      const data = await res.json()
+
+      setExpenses(
+        (data.expenses || []).map((e: any) => ({
+          id: e.id,
+          description: e.description,
+          category: e.category,
+          amount: Number(e.amount),
+          expenseDate: e.expenseDate,
+          status: e.status,
+          isBillable: e.isBillable,
+          matterName: e.matter?.name || null,
+        }))
+      )
+    } catch (error) {
+      console.error('Error loading expenses:', error)
     } finally {
       setIsLoading(false)
     }
@@ -79,11 +73,15 @@ export default function ExpensesPage() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'approved':
+      case 'paid':
         return <CheckCircle className="h-4 w-4 text-green-600" />
       case 'rejected':
         return <XCircle className="h-4 w-4 text-red-600" />
-      case 'pending':
+      case 'submitted':
+      case 'pending_approval':
         return <Clock className="h-4 w-4 text-yellow-600" />
+      case 'draft':
+        return <AlertCircle className="h-4 w-4 text-gray-400" />
       default:
         return <Clock className="h-4 w-4 text-gray-400" />
     }
@@ -92,11 +90,25 @@ export default function ExpensesPage() {
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
       draft: 'bg-gray-100 text-gray-800',
-      pending: 'bg-yellow-100 text-yellow-800',
+      submitted: 'bg-blue-100 text-blue-800',
+      pending_approval: 'bg-yellow-100 text-yellow-800',
       approved: 'bg-green-100 text-green-800',
       rejected: 'bg-red-100 text-red-800',
+      paid: 'bg-green-100 text-green-800',
     }
     return styles[status] || styles.draft
+  }
+
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      draft: 'Draft',
+      submitted: 'Submitted',
+      pending_approval: 'Pending Approval',
+      approved: 'Approved',
+      rejected: 'Rejected',
+      paid: 'Paid',
+    }
+    return labels[status] || status
   }
 
   const filteredExpenses = expenses.filter((expense) => {
@@ -152,7 +164,7 @@ export default function ExpensesPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Pending</p>
                 <p className="text-xl font-semibold text-foreground">
-                  {expenses.filter((e) => e.status === 'pending').length}
+                  {expenses.filter((e) => e.status === 'submitted' || e.status === 'pending_approval').length}
                 </p>
               </div>
             </div>
@@ -204,9 +216,11 @@ export default function ExpensesPage() {
             >
               <option value="all">All Status</option>
               <option value="draft">Draft</option>
-              <option value="pending">Pending</option>
+              <option value="submitted">Submitted</option>
+              <option value="pending_approval">Pending Approval</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
+              <option value="paid">Paid</option>
             </select>
           </div>
           <button className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-muted">
@@ -281,7 +295,7 @@ export default function ExpensesPage() {
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${getStatusBadge(expense.status)}`}
                       >
                         {getStatusIcon(expense.status)}
-                        {expense.status}
+                        {getStatusLabel(expense.status)}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium text-foreground">

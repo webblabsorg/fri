@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { createJournalEntry as createJE, type CreateJournalEntryInput } from './finance-service'
+import { getOrganizationBaseCurrency } from './finance-settings'
 
 // ============================================================================
 // ACCOUNTING AUTOMATION SERVICE
@@ -84,6 +85,8 @@ export async function createAutomatedJournalEntry(input: AutoJournalEntryInput) 
     })
   )
 
+  const baseCurrency = await getOrganizationBaseCurrency(input.organizationId)
+
   // Use the unified createJournalEntry from finance-service
   return createJE({
     organizationId: input.organizationId,
@@ -92,6 +95,7 @@ export async function createAutomatedJournalEntry(input: AutoJournalEntryInput) 
     postedDate: input.entryDate,
     entries: resolvedLines,
     createdBy: input.createdBy,
+    baseCurrency,
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     autoPost: true, // Automated entries are auto-posted
@@ -107,7 +111,8 @@ export async function createInvoiceJournalEntry(
   invoiceId: string,
   clientId: string,
   amount: number,
-  createdBy: string
+  createdBy: string,
+  currency?: string
 ) {
   try {
     return await createAutomatedJournalEntry({
@@ -115,8 +120,8 @@ export async function createInvoiceJournalEntry(
       entryDate: new Date(),
       description: `Invoice issued - Client: ${clientId}`,
       lines: [
-        { accountCode: STANDARD_ACCOUNTS.ACCOUNTS_RECEIVABLE, debit: amount, description: 'Accounts Receivable' },
-        { accountCode: STANDARD_ACCOUNTS.LEGAL_SERVICES_REVENUE, credit: amount, description: 'Legal Services Revenue' },
+        { accountCode: STANDARD_ACCOUNTS.ACCOUNTS_RECEIVABLE, debit: amount, description: 'Accounts Receivable', currency },
+        { accountCode: STANDARD_ACCOUNTS.LEGAL_SERVICES_REVENUE, credit: amount, description: 'Legal Services Revenue', currency },
       ],
       sourceType: 'invoice',
       sourceId: invoiceId,
@@ -135,12 +140,13 @@ export async function createPaymentJournalEntry(
   amount: number,
   paymentMethod: string,
   createdBy: string,
-  processingFee?: number
+  processingFee?: number,
+  currency?: string
 ) {
   try {
     const lines = [
-      { accountCode: STANDARD_ACCOUNTS.OPERATING_CASH, debit: amount - (processingFee || 0), description: 'Cash/Bank' },
-      { accountCode: STANDARD_ACCOUNTS.ACCOUNTS_RECEIVABLE, credit: amount, description: 'Accounts Receivable' },
+      { accountCode: STANDARD_ACCOUNTS.OPERATING_CASH, debit: amount - (processingFee || 0), description: 'Cash/Bank', currency },
+      { accountCode: STANDARD_ACCOUNTS.ACCOUNTS_RECEIVABLE, credit: amount, description: 'Accounts Receivable', currency },
     ]
     
     // Add processing fee line if applicable
@@ -149,6 +155,7 @@ export async function createPaymentJournalEntry(
         accountCode: STANDARD_ACCOUNTS.PAYMENT_PROCESSING_FEES,
         debit: processingFee,
         description: `Payment processing fee - ${paymentMethod}`,
+        currency,
       })
     }
 

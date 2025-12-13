@@ -51,22 +51,26 @@ export default function FinanceDashboardPage() {
   const loadDashboardData = async () => {
     setIsLoading(true)
     try {
-      // In production, these would be real API calls
-      // For now, showing placeholder data structure
-      setStats({
-        trustBalance: 125000.00,
-        outstandingAR: 45000.00,
-        unbilledWIP: 32500.00,
-        monthlyRevenue: 78000.00,
-        complianceAlerts: 2,
-      })
+      const orgRes = await fetch('/api/organizations/current')
+      if (!orgRes.ok) {
+        console.error('Failed to get current organization')
+        return
+      }
+      const orgData = await orgRes.json()
+      const organizationId = orgData.organization?.id
 
-      setRecentActivity([
-        { id: '1', type: 'payment', description: 'Payment received - Smith v. Jones', amount: 5000, date: '2024-12-12' },
-        { id: '2', type: 'invoice', description: 'Invoice sent - Corporate Matter #2024-0045', amount: 12500, date: '2024-12-11' },
-        { id: '3', type: 'expense', description: 'Court filing fee - Estate Matter', amount: 450, date: '2024-12-10' },
-        { id: '4', type: 'trust', description: 'Trust deposit - Johnson Retainer', amount: 10000, date: '2024-12-10' },
-      ])
+      if (!organizationId) {
+        console.error('No organization found')
+        return
+      }
+
+      const res = await fetch(`/api/finance/dashboard/stats?organizationId=${organizationId}`)
+      if (!res.ok) {
+        throw new Error('Failed to fetch dashboard stats')
+      }
+      const data = await res.json()
+      setStats(data.stats)
+      setRecentActivity(data.recentActivity || [])
     } catch (error) {
       console.error('Error loading dashboard data:', error)
     } finally {
@@ -113,7 +117,7 @@ export default function FinanceDashboardPage() {
   ]
 
   const quickActions = [
-    { title: 'Create Invoice', href: '/dashboard/finance/invoices/new', icon: FileText },
+    { title: 'Create Invoice', href: '/dashboard/finance/billing/new', icon: FileText },
     { title: 'Record Payment', href: '/dashboard/finance/payments/new', icon: CreditCard },
     { title: 'Add Expense', href: '/dashboard/finance/expenses/new', icon: Receipt },
     { title: 'Trust Transaction', href: '/dashboard/finance/trust/transaction', icon: Building2 },
@@ -122,11 +126,12 @@ export default function FinanceDashboardPage() {
   const moduleLinks = [
     { title: 'Chart of Accounts', description: 'Manage your general ledger accounts', href: '/dashboard/finance/accounts', icon: PieChart },
     { title: 'Trust Accounting', description: 'IOLTA compliance and client ledgers', href: '/dashboard/finance/trust', icon: Building2 },
-    { title: 'Invoices', description: 'Create and manage client invoices', href: '/dashboard/finance/invoices', icon: FileText },
+    { title: 'Billing & Invoices', description: 'Create and manage client invoices', href: '/dashboard/finance/billing', icon: FileText },
+    { title: 'Time Entries', description: 'Track billable time and WIP', href: '/dashboard/finance/billing/time-entries', icon: TrendingUp },
     { title: 'Payments', description: 'Track payments and collections', href: '/dashboard/finance/payments', icon: CreditCard },
     { title: 'Expenses', description: 'Track and manage expenses', href: '/dashboard/finance/expenses', icon: Receipt },
     { title: 'Vendors', description: 'Manage vendors and bills', href: '/dashboard/finance/vendors', icon: Users },
-    { title: 'Reports', description: 'Financial reports and analytics', href: '/dashboard/finance/reports', icon: BarChart3 },
+    { title: 'Billing Reports', description: 'AR aging, WIP, and revenue forecasts', href: '/dashboard/finance/billing/reports', icon: BarChart3 },
   ]
 
   return (

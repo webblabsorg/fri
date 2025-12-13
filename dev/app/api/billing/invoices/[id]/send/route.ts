@@ -38,6 +38,23 @@ export async function POST(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
+    // Check if invoice has been previewed
+    const existingInvoice = await prisma.invoice.findFirst({
+      where: { id, organizationId },
+      select: { previewedAt: true, status: true },
+    })
+
+    if (!existingInvoice) {
+      return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
+    }
+
+    if (!existingInvoice.previewedAt) {
+      return NextResponse.json(
+        { error: 'Invoice must be previewed before sending. Please preview the invoice first.' },
+        { status: 400 }
+      )
+    }
+
     const invoice = await sendInvoice(id, organizationId)
 
     return NextResponse.json({ invoice })

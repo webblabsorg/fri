@@ -143,6 +143,12 @@ model Organization {
   vendorPayments    VendorPayment[]
   expensePolicies   ExpensePolicy[]
   financialAnomalies FinancialAnomaly[]
+  invoiceTemplates  InvoiceTemplate[]
+  paymentPlans      PaymentPlan[]
+  vendorCredits     VendorCredit[]
+  vendorCreditApplications VendorCreditApplication[]
+  approvalWorkflows ApprovalWorkflow[]
+  approvalRequests  ApprovalRequest[]
 
   @@index([status])
 }
@@ -1863,6 +1869,7 @@ model Contact {
   payments        Payment[]
   trustLedgers    ClientTrustLedger[]
   expenses        Expense[]
+  paymentPlans    PaymentPlan[]
   
   @@index([organizationId])
   @@index([contactType])
@@ -2315,6 +2322,7 @@ model Invoice {
   aiSuggestedWriteOff Decimal? @db.Decimal(15, 2)
   
   // Timestamps
+  previewedAt     DateTime? // Must be set before sending
   sentAt          DateTime?
   viewedAt        DateTime?
   paidAt          DateTime?
@@ -2333,6 +2341,8 @@ model Invoice {
   lineItems       InvoiceLineItem[]
   payments        Payment[]
   reminders       PaymentReminder[]
+  paymentPlans    PaymentPlan[]
+  accessTokens    InvoiceAccessToken[]
   
   @@unique([organizationId, invoiceNumber])
   @@index([organizationId])
@@ -2455,6 +2465,67 @@ model PaymentReminder {
   @@index([status])
 }
 
+model PaymentPlan {
+  id              String   @id @default(uuid())
+  organizationId  String
+  invoiceId       String
+  clientId        String
+  
+  // Plan details
+  totalAmount     Decimal  @db.Decimal(15, 2)
+  numberOfInstallments Int
+  frequency       String   // weekly, biweekly, monthly
+  startDate       DateTime
+  
+  // Status
+  status          String   @default("active") // active, completed, cancelled, defaulted
+  paidAmount      Decimal  @db.Decimal(15, 2) @default(0)
+  remainingAmount Decimal  @db.Decimal(15, 2)
+  
+  // Auto-charge settings
+  autoCharge      Boolean  @default(false)
+  paymentMethodId String?  // Stored payment method ID from processor
+  processor       String?  // stripe, lawpay, paypal
+  
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id])
+  client          Contact      @relation(fields: [clientId], references: [id])
+  installments    PaymentPlanInstallment[]
+  
+  @@index([organizationId])
+  @@index([invoiceId])
+  @@index([clientId])
+  @@index([status])
+}
+
+model PaymentPlanInstallment {
+  id              String   @id @default(uuid())
+  paymentPlanId   String
+  installmentNumber Int
+  amount          Decimal  @db.Decimal(15, 2)
+  dueDate         DateTime
+  status          String   @default("pending") // pending, paid, overdue, failed
+  paidAt          DateTime?
+  paymentId       String?  // Link to Payment if paid
+  
+  // Auto-charge attempt tracking
+  lastAttemptAt   DateTime?
+  attemptCount    Int      @default(0)
+  lastError       String?
+  
+  createdAt       DateTime @default(now())
+  
+  paymentPlan     PaymentPlan @relation(fields: [paymentPlanId], references: [id], onDelete: Cascade)
+  
+  @@index([paymentPlanId])
+  @@index([dueDate])
+  @@index([status])
+}
+
 model BillingRate {
   id              String   @id @default(uuid())
   organizationId  String
@@ -2476,6 +2547,20 @@ model BillingRate {
   @@index([userId])
   @@index([clientId])
   @@index([effectiveDate])
+}
+
+model InvoiceAccessToken {
+  id          String   @id @default(uuid())
+  invoiceId   String
+  token       String   @unique @default(uuid())
+  expiresAt   DateTime?
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+  
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  
+  @@index([invoiceId])
+  @@index([token])
 }
 
 // ============================================================================
@@ -2606,6 +2691,7 @@ model Vendor {
   expenses        Expense[]
   bills           VendorBill[]
   payments        VendorPayment[]
+  credits         VendorCredit[]
   
   @@unique([organizationId, vendorNumber])
   @@index([organizationId])
@@ -2658,6 +2744,7 @@ model VendorBill {
   matter          Matter?      @relation(fields: [matterId], references: [id])
   lineItems       VendorBillLineItem[]
   payments        VendorPayment[]
+  creditApplications VendorCreditApplication[]
   
   @@index([organizationId])
   @@index([vendorId])
@@ -2729,6 +2816,164 @@ model ExpensePolicy {
 }
 
 // ============================================================================
+// VENDOR CREDITS
+// ============================================================================
+
+model VendorCredit {
+  id              String   @id @default(uuid())
+  creditNumber    String
+  organizationId  String
+  vendorId        String
+  
+  amount          Decimal  @db.Decimal(15, 2)
+  remainingAmount Decimal  @db.Decimal(15, 2)
+  currency        String   @default("USD")
+  
+  reason          String?  // return, overpayment, discount, adjustment
+  description     String?
+  creditDate      DateTime
+  expirationDate  DateTime?
+  
+  status          String   @default("active") // active, partially_applied, fully_applied, expired, cancelled
+  
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  vendor          Vendor       @relation(fields: [vendorId], references: [id])
+  applications    VendorCreditApplication[]
+  
+  @@unique([organizationId, creditNumber])
+  @@index([organizationId])
+  @@index([vendorId])
+  @@index([status])
+}
+
+model VendorCreditApplication {
+  id              String   @id @default(uuid())
+  organizationId  String
+  creditId        String
+  billId          String
+  
+  amount          Decimal  @db.Decimal(15, 2)
+  appliedAt       DateTime @default(now())
+  appliedBy       String
+  notes           String?
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  credit          VendorCredit @relation(fields: [creditId], references: [id])
+  bill            VendorBill   @relation(fields: [billId], references: [id])
+  
+  @@index([organizationId])
+  @@index([creditId])
+  @@index([billId])
+}
+
+// ============================================================================
+// APPROVAL WORKFLOWS (Multi-level)
+// ============================================================================
+
+model ApprovalWorkflow {
+  id              String   @id @default(uuid())
+  organizationId  String
+  name            String
+  description     String?
+  entityType      String   // expense, vendor_bill, invoice
+  
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  levels          ApprovalLevel[]
+  requests        ApprovalRequest[]
+  
+  @@index([organizationId])
+  @@index([entityType])
+  @@index([isActive])
+}
+
+model ApprovalLevel {
+  id              String   @id @default(uuid())
+  workflowId      String
+  levelNumber     Int      // 1, 2, 3... for sequential approval
+  name            String
+  
+  // Conditions for this level to apply
+  minAmount       Decimal? @db.Decimal(15, 2)
+  maxAmount       Decimal? @db.Decimal(15, 2)
+  categories      String?  // comma-separated categories, null = all
+  
+  // Who can approve at this level
+  approverRole    String?  // owner, admin, manager, or null for specific users
+  approverUserIds String?  // comma-separated user IDs if specific users
+  
+  // Settings
+  requireAll      Boolean  @default(false) // true = all approvers must approve, false = any one
+  autoApprove     Boolean  @default(false) // auto-approve if conditions met
+  escalationHours Int?     // hours before escalating to next level
+  
+  createdAt       DateTime @default(now())
+  
+  workflow        ApprovalWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  steps           ApprovalStep[]
+  
+  @@unique([workflowId, levelNumber])
+  @@index([workflowId])
+}
+
+model ApprovalRequest {
+  id              String   @id @default(uuid())
+  organizationId  String
+  workflowId      String
+  
+  entityType      String   // expense, vendor_bill, invoice
+  entityId        String
+  
+  requestedBy     String
+  requestedAt     DateTime @default(now())
+  
+  currentLevel    Int      @default(1)
+  status          String   @default("pending") // pending, approved, rejected, cancelled
+  
+  completedAt     DateTime?
+  finalApprover   String?
+  
+  amount          Decimal  @db.Decimal(15, 2)
+  description     String?
+  metadata        Json?
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  workflow        ApprovalWorkflow @relation(fields: [workflowId], references: [id])
+  steps           ApprovalStep[]
+  
+  @@unique([entityType, entityId])
+  @@index([organizationId])
+  @@index([workflowId])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+model ApprovalStep {
+  id              String   @id @default(uuid())
+  requestId       String
+  levelId         String
+  
+  approverId      String
+  action          String   // approved, rejected, delegated
+  comments        String?
+  actionAt        DateTime @default(now())
+  
+  request         ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  level           ApprovalLevel   @relation(fields: [levelId], references: [id])
+  
+  @@index([requestId])
+  @@index([levelId])
+  @@index([approverId])
+}
+
+// ============================================================================
 // PHASE 12.1.1: AI FINANCIAL ANOMALY DETECTION
 // ============================================================================
 
@@ -2771,4 +3016,47 @@ model FinancialAnomaly {
   @@index([severity])
   @@index([status])
   @@index([detectedAt])
+}
+
+// ============================================================================
+// INVOICE TEMPLATES
+// ============================================================================
+
+model InvoiceTemplate {
+  id              String   @id @default(uuid())
+  organizationId  String
+  name            String
+  isDefault       Boolean  @default(false)
+  language        String   @default("en") // ISO 639-1 code
+  
+  // Branding
+  logoUrl         String?
+  primaryColor    String   @default("#000000")
+  accentColor     String   @default("#3B82F6")
+  fontFamily      String   @default("Helvetica")
+  
+  // Content sections
+  headerHtml      String?  @db.Text
+  footerHtml      String?  @db.Text
+  termsTemplate   String?  @db.Text
+  notesTemplate   String?  @db.Text
+  
+  // Layout options
+  showLogo        Boolean  @default(true)
+  showPaymentInfo Boolean  @default(true)
+  showUtbmsCodes  Boolean  @default(false)
+  paperSize       String   @default("LETTER") // LETTER, A4, LEGAL
+  
+  // Localization
+  dateFormat      String   @default("MM/DD/YYYY")
+  currencyFormat  String   @default("symbol") // symbol, code, both
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([isDefault])
 }

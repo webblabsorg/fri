@@ -59,7 +59,7 @@ export const IOLTA_RULES = {
     description: 'Firm funds must not be commingled with client trust funds',
     check: async (organizationId: string): Promise<ComplianceCheckResult> => {
       const trustAccounts = await prisma.trustAccount.findMany({
-        where: { organizationId, accountType: 'iolta', isActive: true },
+        where: { organizationId, accountType: 'IOLTA', isActive: true },
       })
 
       const hasProperSetup = trustAccounts.every((ta) => ta.bankName && ta.accountNumber)

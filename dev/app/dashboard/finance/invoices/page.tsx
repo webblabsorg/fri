@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import {
   FileText,
   Plus,
@@ -13,6 +14,7 @@ import {
   CheckCircle,
   AlertCircle,
   DollarSign,
+  Loader2,
 } from 'lucide-react'
 
 interface Invoice {
@@ -25,59 +27,56 @@ interface Invoice {
   status: string
   issueDate: string
   dueDate: string
+  currency: string
 }
 
 export default function InvoicesPage() {
+  const searchParams = useSearchParams()
+  const organizationId = searchParams.get('organizationId') || ''
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    loadInvoices()
-  }, [filter])
+    if (organizationId) {
+      loadInvoices()
+    }
+  }, [filter, organizationId])
 
   const loadInvoices = async () => {
     setIsLoading(true)
+    setError(null)
     try {
-      // Placeholder data
-      setInvoices([
-        {
-          id: '1',
-          invoiceNumber: 'INV-2024-0045',
-          clientName: 'Acme Corporation',
-          matterName: 'Corporate Restructuring',
-          totalAmount: 12500.00,
-          balanceDue: 12500.00,
-          status: 'sent',
-          issueDate: '2024-12-01',
-          dueDate: '2024-12-31',
-        },
-        {
-          id: '2',
-          invoiceNumber: 'INV-2024-0044',
-          clientName: 'Smith Family Trust',
-          matterName: 'Estate Planning',
-          totalAmount: 5000.00,
-          balanceDue: 0,
-          status: 'paid',
-          issueDate: '2024-11-15',
-          dueDate: '2024-12-15',
-        },
-        {
-          id: '3',
-          invoiceNumber: 'INV-2024-0043',
-          clientName: 'Johnson LLC',
-          matterName: null,
-          totalAmount: 8750.00,
-          balanceDue: 8750.00,
-          status: 'overdue',
-          issueDate: '2024-10-15',
-          dueDate: '2024-11-15',
-        },
-      ])
-    } catch (error) {
-      console.error('Error loading invoices:', error)
+      const params = new URLSearchParams({ organizationId })
+      if (filter !== 'all') {
+        params.append('status', filter)
+      }
+      
+      const response = await fetch(`/api/billing/invoices?${params}`)
+      if (!response.ok) {
+        throw new Error('Failed to load invoices')
+      }
+      
+      const data = await response.json()
+      setInvoices(
+        (data.invoices || []).map((inv: any) => ({
+          id: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          clientName: inv.client?.displayName || 'Unknown Client',
+          matterName: inv.matter?.matterName || null,
+          totalAmount: Number(inv.totalAmount),
+          balanceDue: Number(inv.balanceDue),
+          status: inv.status,
+          issueDate: inv.issueDate,
+          dueDate: inv.dueDate,
+          currency: inv.currency || 'USD',
+        }))
+      )
+    } catch (err) {
+      console.error('Error loading invoices:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load invoices')
     } finally {
       setIsLoading(false)
     }
@@ -140,7 +139,7 @@ export default function InvoicesPage() {
             <h1 className="text-3xl font-bold text-white">Invoices</h1>
           </div>
           <Link
-            href="/dashboard/finance/invoices/new"
+            href={`/dashboard/finance/billing/new${organizationId ? `?organizationId=${organizationId}` : ''}`}
             className="flex items-center gap-2 px-4 py-2 bg-white text-black font-medium rounded-lg hover:bg-gray-200 transition-colors"
           >
             <Plus className="h-4 w-4" />
@@ -236,7 +235,7 @@ export default function InvoicesPage() {
                   </td>
                   <td className="p-4">
                     <Link
-                      href={`/dashboard/finance/invoices/${invoice.id}`}
+                      href={`/dashboard/finance/billing/${invoice.id}${organizationId ? `?organizationId=${organizationId}` : ''}`}
                       className="text-white/60 hover:text-white"
                     >
                       <ChevronRight className="h-5 w-5" />
@@ -247,9 +246,22 @@ export default function InvoicesPage() {
             </tbody>
           </table>
 
-          {filteredInvoices.length === 0 && (
+          {isLoading && (
             <div className="p-8 text-center text-gray-400">
-              No invoices found
+              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+              Loading invoices...
+            </div>
+          )}
+
+          {error && (
+            <div className="p-8 text-center text-red-400">
+              {error}
+            </div>
+          )}
+
+          {!isLoading && !error && filteredInvoices.length === 0 && (
+            <div className="p-8 text-center text-gray-400">
+              No invoices found. <Link href={`/dashboard/finance/billing/new${organizationId ? `?organizationId=${organizationId}` : ''}`} className="text-white hover:underline">Create your first invoice</Link>
             </div>
           )}
         </div>

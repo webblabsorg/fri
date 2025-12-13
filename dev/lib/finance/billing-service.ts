@@ -1,6 +1,9 @@
 import { prisma } from '@/lib/db'
 import { Decimal } from '@prisma/client/runtime/library'
 import { createInvoiceJournalEntry, createPaymentJournalEntry } from './accounting-automation'
+import { getExchangeRate } from './exchange-rate-service'
+import { getOrganizationBaseCurrency } from './finance-settings'
+import { sendInvoiceEmail } from '@/lib/email/service'
 
 // ============================================================================
 // INVOICE SERVICE
@@ -39,6 +42,36 @@ export interface InvoiceLineItemInput {
   serviceDateEnd?: Date
 }
 
+async function requireFreshUsdRatesForMultiCurrency(): Promise<void> {
+  // If the live provider is configured, exchange-rate-service will refresh/cache as needed.
+  if (process.env.OPEN_EXCHANGE_RATES_APP_ID) {
+    return
+  }
+
+  const setting = await prisma.systemSetting.findUnique({ where: { key: 'exchangeRates:USD' } })
+  if (!setting?.value) {
+    throw new Error(
+      'Multi-currency invoicing requires live exchange rates. Configure OPEN_EXCHANGE_RATES_APP_ID (or pre-warm the exchangeRates:USD cache)'
+    )
+  }
+
+  try {
+    const parsed = JSON.parse(setting.value) as { fetchedAt?: string }
+    const fetchedAt = parsed.fetchedAt ? new Date(parsed.fetchedAt) : null
+    if (!fetchedAt || Number.isNaN(fetchedAt.getTime())) {
+      throw new Error('Invalid exchange rate cache')
+    }
+    const ageMs = Date.now() - fetchedAt.getTime()
+    if (ageMs > 60 * 60 * 1000) {
+      throw new Error('Exchange rate cache is stale')
+    }
+  } catch {
+    throw new Error(
+      'Multi-currency invoicing requires fresh exchange rates (<1h). Configure OPEN_EXCHANGE_RATES_APP_ID to fetch live rates.'
+    )
+  }
+}
+
 export async function generateInvoiceNumber(organizationId: string): Promise<string> {
   const year = new Date().getFullYear()
   const count = await prisma.invoice.count({
@@ -55,6 +88,13 @@ export async function createInvoice(
   lineItems: InvoiceLineItemInput[]
 ) {
   const invoiceNumber = await generateInvoiceNumber(input.organizationId)
+
+  const invoiceCurrency = (input.currency || 'USD').toUpperCase()
+  const baseCurrency = await getOrganizationBaseCurrency(input.organizationId)
+
+  if (invoiceCurrency !== baseCurrency) {
+    await requireFreshUsdRatesForMultiCurrency()
+  }
 
   let subtotal = 0
   let totalTax = 0
@@ -87,6 +127,11 @@ export async function createInvoice(
 
   const totalAmount = subtotal + totalTax
 
+  const exchangeRate = invoiceCurrency === baseCurrency
+    ? 1
+    : await getExchangeRate(invoiceCurrency, baseCurrency, input.issueDate)
+  const baseCurrencyTotal = totalAmount * exchangeRate
+
   const invoice = await prisma.invoice.create({
     data: {
       invoiceNumber,
@@ -102,7 +147,9 @@ export async function createInvoice(
       taxAmount: new Decimal(totalTax),
       totalAmount: new Decimal(totalAmount),
       balanceDue: new Decimal(totalAmount),
-      currency: input.currency || 'USD',
+      currency: invoiceCurrency,
+      exchangeRate: new Decimal(exchangeRate),
+      baseCurrencyTotal: new Decimal(baseCurrencyTotal),
       notes: input.notes,
       internalNotes: input.internalNotes,
       termsAndConditions: input.termsAndConditions,
@@ -127,7 +174,8 @@ export async function createInvoice(
       invoice.id,
       input.clientId,
       totalAmount,
-      input.createdBy
+      input.createdBy,
+      invoiceCurrency
     )
   } catch (err) {
     console.warn('Failed to create invoice journal entry:', err)
@@ -260,10 +308,46 @@ export async function approveInvoice(id: string, organizationId: string, approve
 export async function sendInvoice(id: string, organizationId: string) {
   const invoice = await prisma.invoice.findFirst({
     where: { id, organizationId, status: 'approved' },
+    include: {
+      client: { select: { displayName: true, email: true } },
+      organization: { select: { name: true } },
+    },
   })
 
   if (!invoice) {
     throw new Error('Invoice not found or not approved')
+  }
+
+  if (!invoice.client.email) {
+    throw new Error('Client does not have an email address')
+  }
+
+  const accessToken = await prisma.invoiceAccessToken.create({
+    data: {
+      invoiceId: id,
+      expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+    },
+  })
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const paymentUrl = `${appUrl}/pay/${accessToken.token}`
+
+  const formatCurrency = (amount: number, currency: string) => {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
+  }
+
+  const emailSent = await sendInvoiceEmail(
+    invoice.createdBy,
+    invoice.client.email,
+    invoice.client.displayName,
+    invoice.invoiceNumber,
+    formatCurrency(Number(invoice.totalAmount), invoice.currency),
+    paymentUrl
+  )
+
+  if (!emailSent) {
+    await prisma.invoiceAccessToken.delete({ where: { id: accessToken.id } })
+    throw new Error('Failed to send invoice email. Please check email configuration.')
   }
 
   return prisma.invoice.update({
@@ -409,7 +493,9 @@ export async function createPayment(input: CreatePaymentInput) {
         input.invoiceId,
         input.amount,
         input.paymentMethod,
-        input.processedBy
+        input.processedBy,
+        input.processorFee,
+        payment.currency
       )
     } catch (err) {
       console.warn('Failed to create payment journal entry:', err)
@@ -417,6 +503,46 @@ export async function createPayment(input: CreatePaymentInput) {
   }
 
   return payment
+}
+
+export async function handleStripeInvoicePayment(
+  invoiceId: string,
+  stripeSessionId: string,
+  amountPaid: number,
+  processorFee?: number
+) {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    include: { organization: true, client: true },
+  })
+
+  if (!invoice) {
+    throw new Error(`Invoice not found: ${invoiceId}`)
+  }
+
+  if (invoice.status === 'paid') {
+    console.log(`[Stripe] Invoice ${invoice.invoiceNumber} already paid, skipping`)
+    return invoice
+  }
+
+  const payment = await createPayment({
+    organizationId: invoice.organizationId,
+    invoiceId: invoice.id,
+    clientId: invoice.clientId,
+    amount: amountPaid,
+    currency: invoice.currency,
+    paymentMethod: 'credit_card',
+    paymentDate: new Date(),
+    processorId: stripeSessionId,
+    processorFee,
+    referenceNumber: stripeSessionId,
+    notes: 'Online payment via Stripe',
+    processedBy: 'system',
+  })
+
+  console.log(`[Stripe] Recorded payment ${payment.id} for invoice ${invoice.invoiceNumber}`)
+
+  return prisma.invoice.findUnique({ where: { id: invoiceId } })
 }
 
 export async function getPayments(organizationId: string, options?: {
@@ -953,28 +1079,16 @@ export async function createInvoiceReminder(input: CreateReminderInput) {
     throw new Error('Can only send reminders for sent/viewed/overdue invoices')
   }
 
-  const reminder = await prisma.$transaction(async (tx) => {
-    const rem = await tx.paymentReminder.create({
-      data: {
-        invoiceId: input.invoiceId,
-        reminderType: input.reminderType,
-        scheduledFor: input.scheduledFor,
-        emailTo: input.emailTo,
-        emailSubject: input.emailSubject,
-        emailBody: input.emailBody,
-        status: 'scheduled',
-      },
-    })
-
-    await tx.invoice.update({
-      where: { id: input.invoiceId },
-      data: {
-        reminderCount: { increment: 1 },
-        lastReminderAt: new Date(),
-      },
-    })
-
-    return rem
+  const reminder = await prisma.paymentReminder.create({
+    data: {
+      invoiceId: input.invoiceId,
+      reminderType: input.reminderType,
+      scheduledFor: input.scheduledFor,
+      emailTo: input.emailTo,
+      emailSubject: input.emailSubject,
+      emailBody: input.emailBody,
+      status: 'scheduled',
+    },
   })
 
   return reminder
@@ -983,7 +1097,15 @@ export async function createInvoiceReminder(input: CreateReminderInput) {
 export async function sendInvoiceReminder(reminderId: string) {
   const reminder = await prisma.paymentReminder.findUnique({
     where: { id: reminderId },
-    include: { invoice: { include: { client: true } } },
+    include: {
+      invoice: {
+        include: {
+          client: true,
+          organization: { select: { id: true, name: true } },
+          accessTokens: { where: { expiresAt: { gt: new Date() } }, take: 1 },
+        },
+      },
+    },
   })
 
   if (!reminder) {
@@ -994,15 +1116,52 @@ export async function sendInvoiceReminder(reminderId: string) {
     throw new Error('Reminder already sent or cancelled')
   }
 
-  await prisma.paymentReminder.update({
-    where: { id: reminderId },
-    data: {
-      status: 'sent',
-      sentAt: new Date(),
-    },
+  const invoice = reminder.invoice
+  if (invoice.status === 'paid' || Number(invoice.balanceDue) <= 0) {
+    await prisma.paymentReminder.update({
+      where: { id: reminderId },
+      data: { status: 'cancelled' },
+    })
+    return { ...reminder, status: 'cancelled' }
+  }
+
+  let accessToken = invoice.accessTokens[0]
+  if (!accessToken) {
+    accessToken = await prisma.invoiceAccessToken.create({
+      data: {
+        invoiceId: invoice.id,
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+      },
+    })
+  }
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const paymentUrl = `${appUrl}/pay/${accessToken.token}`
+
+  const { sendEmail } = await import('@/lib/email/service')
+  const emailSent = await sendEmail({
+    to: reminder.emailTo,
+    subject: reminder.emailSubject,
+    html: reminder.emailBody.replace(/\{paymentUrl\}/g, paymentUrl),
+    text: reminder.emailBody.replace(/<[^>]*>/g, '').replace(/\{paymentUrl\}/g, paymentUrl),
   })
 
-  return reminder
+  if (!emailSent) {
+    throw new Error('Failed to send reminder email')
+  }
+
+  await prisma.$transaction([
+    prisma.paymentReminder.update({
+      where: { id: reminderId },
+      data: { status: 'sent', sentAt: new Date() },
+    }),
+    prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { reminderCount: { increment: 1 }, lastReminderAt: new Date() },
+    }),
+  ])
+
+  return { ...reminder, status: 'sent', sentAt: new Date() }
 }
 
 // ============================================================================
@@ -1013,25 +1172,70 @@ export async function batchCreateInvoices(
   inputs: Array<{
     input: CreateInvoiceInput
     lineItems: InvoiceLineItemInput[]
-  }>
-) {
-  const results: Array<{ success: boolean; invoice?: unknown; error?: string }> = []
-
-  for (const { input, lineItems } of inputs) {
-    try {
-      const invoice = await createInvoice(input, lineItems)
-      results.push({ success: true, invoice })
-    } catch (error) {
-      results.push({ success: false, error: (error as Error).message })
-    }
+  }>,
+  options?: {
+    concurrency?: number // Max parallel operations (default: 10)
+    chunkSize?: number   // Process in chunks for memory efficiency (default: 50)
   }
+) {
+  const concurrency = options?.concurrency || 10
+  const chunkSize = options?.chunkSize || 50
+  const results: Array<{ success: boolean; invoice?: unknown; error?: string; index: number }> = []
+
+  // Process in chunks to avoid memory issues with large batches
+  for (let chunkStart = 0; chunkStart < inputs.length; chunkStart += chunkSize) {
+    const chunk = inputs.slice(chunkStart, chunkStart + chunkSize)
+    
+    // Process chunk with controlled concurrency
+    const chunkResults = await processWithConcurrency(
+      chunk.map((item, idx) => ({
+        ...item,
+        index: chunkStart + idx,
+      })),
+      async (item) => {
+        try {
+          const invoice = await createInvoice(item.input, item.lineItems)
+          return { success: true, invoice, index: item.index }
+        } catch (error) {
+          return { success: false, error: (error as Error).message, index: item.index }
+        }
+      },
+      concurrency
+    )
+    
+    results.push(...chunkResults)
+  }
+
+  // Sort by original index to maintain order
+  results.sort((a, b) => a.index - b.index)
 
   return {
     total: inputs.length,
     successful: results.filter((r) => r.success).length,
     failed: results.filter((r) => !r.success).length,
-    results,
+    results: results.map(({ index, ...rest }) => rest),
   }
+}
+
+async function processWithConcurrency<T, R>(
+  items: T[],
+  processor: (item: T) => Promise<R>,
+  concurrency: number
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++
+      results[index] = await processor(items[index])
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  await Promise.all(workers)
+
+  return results
 }
 
 export async function batchSendInvoices(invoiceIds: string[], organizationId: string) {
@@ -1102,6 +1306,8 @@ export interface InvoicePdfData {
     taxAmount: number
     totalAmount: number
     balanceDue: number
+    currency: string
+    paymentTerms?: string | null
     notes?: string | null
     termsAndConditions?: string | null
   }
@@ -1114,6 +1320,9 @@ export interface InvoicePdfData {
     quantity: number
     rate: number
     amount: number
+    utbmsTaskCode?: string | null
+    utbmsActivityCode?: string | null
+    utbmsExpenseCode?: string | null
   }>
   organization: {
     name: string
@@ -1144,6 +1353,8 @@ export async function getInvoicePdfData(invoiceId: string, organizationId: strin
       taxAmount: Number(invoice.taxAmount),
       totalAmount: Number(invoice.totalAmount),
       balanceDue: Number(invoice.balanceDue),
+      currency: invoice.currency,
+      paymentTerms: invoice.paymentTerms,
       notes: invoice.notes,
       termsAndConditions: invoice.termsAndConditions,
     },
@@ -1156,6 +1367,9 @@ export async function getInvoicePdfData(invoiceId: string, organizationId: strin
       quantity: Number(li.quantity),
       rate: Number(li.rate),
       amount: Number(li.amount),
+      utbmsTaskCode: li.utbmsTaskCode,
+      utbmsActivityCode: li.utbmsActivityCode,
+      utbmsExpenseCode: li.utbmsExpenseCode,
     })),
     organization: {
       name: invoice.organization.name,

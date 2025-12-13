@@ -12,7 +12,9 @@ import {
   AlertCircle,
   DollarSign,
   CreditCard,
+  Calendar,
 } from 'lucide-react'
+import { useOrganization } from '@/components/providers/OrganizationProvider'
 
 interface VendorBill {
   id: string
@@ -23,84 +25,102 @@ interface VendorBill {
   status: string
   billDate: string
   dueDate: string
+  isOverdue: boolean
 }
 
 export default function VendorBillsPage() {
+  const { currentOrganization } = useOrganization()
   const [bills, setBills] = useState<VendorBill[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
-    loadBills()
-  }, [filter])
+    if (currentOrganization?.id) {
+      loadBills()
+    }
+  }, [filter, currentOrganization?.id])
 
   const loadBills = async () => {
+    if (!currentOrganization?.id) return
     setIsLoading(true)
     try {
-      setBills([
-        {
-          id: '1',
-          billNumber: 'BILL-2024-0012',
-          vendorName: 'Legal Research Services Inc.',
-          totalAmount: 2500.00,
-          balanceDue: 2500.00,
-          status: 'pending',
-          billDate: '2024-01-10',
-          dueDate: '2024-02-10',
-        },
-        {
-          id: '2',
-          billNumber: 'BILL-2024-0011',
-          vendorName: 'Court Reporting Associates',
-          totalAmount: 1850.00,
-          balanceDue: 0,
-          status: 'paid',
-          billDate: '2024-01-05',
-          dueDate: '2024-02-05',
-        },
-        {
-          id: '3',
-          billNumber: 'BILL-2024-0010',
-          vendorName: 'Office Supply Co.',
-          totalAmount: 450.00,
-          balanceDue: 450.00,
-          status: 'overdue',
-          billDate: '2023-12-15',
-          dueDate: '2024-01-15',
-        },
-      ])
+      const statusParam = filter !== 'all' && filter !== 'overdue' ? `&status=${filter}` : ''
+      const res = await fetch(`/api/vendor-bills?organizationId=${currentOrganization.id}${statusParam}&limit=100`)
+      if (!res.ok) throw new Error('Failed to fetch vendor bills')
+      const data = await res.json()
+
+      const now = new Date()
+      setBills(
+        (data.bills || []).map((b: any) => {
+          const balanceDue = Number(b.balanceDue)
+          const dueDate = new Date(b.dueDate)
+          const isOverdue = balanceDue > 0 && dueDate < now && b.status !== 'paid' && b.status !== 'cancelled'
+          return {
+            id: b.id,
+            billNumber: b.billNumber,
+            vendorName: b.vendor?.name || 'Unknown',
+            totalAmount: Number(b.totalAmount),
+            balanceDue,
+            status: b.status,
+            billDate: b.billDate,
+            dueDate: b.dueDate,
+            isOverdue,
+          }
+        })
+      )
+    } catch (error) {
+      console.error('Error loading vendor bills:', error)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const getStatusIcon = (status: string) => {
+  const getStatusIcon = (status: string, isOverdue: boolean) => {
+    if (isOverdue) return <AlertCircle className="h-4 w-4 text-red-600" />
     switch (status) {
       case 'paid':
         return <CheckCircle className="h-4 w-4 text-green-600" />
-      case 'overdue':
-        return <AlertCircle className="h-4 w-4 text-red-600" />
+      case 'scheduled':
+        return <Calendar className="h-4 w-4 text-blue-600" />
+      case 'approved':
+        return <CheckCircle className="h-4 w-4 text-blue-600" />
       case 'pending':
         return <Clock className="h-4 w-4 text-yellow-600" />
+      case 'cancelled':
+        return <AlertCircle className="h-4 w-4 text-gray-400" />
       default:
         return <Clock className="h-4 w-4 text-gray-400" />
     }
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, isOverdue: boolean) => {
+    if (isOverdue) return 'bg-red-100 text-red-800'
     const styles: Record<string, string> = {
-      draft: 'bg-gray-100 text-gray-800',
       pending: 'bg-yellow-100 text-yellow-800',
-      approved: 'bg-green-100 text-green-800',
+      approved: 'bg-blue-100 text-blue-800',
+      scheduled: 'bg-blue-100 text-blue-800',
       paid: 'bg-green-100 text-green-800',
-      overdue: 'bg-red-100 text-red-800',
+      cancelled: 'bg-gray-100 text-gray-800',
     }
-    return styles[status] || styles.draft
+    return styles[status] || 'bg-gray-100 text-gray-800'
+  }
+
+  const getStatusLabel = (status: string, isOverdue: boolean) => {
+    if (isOverdue) return 'Overdue'
+    const labels: Record<string, string> = {
+      pending: 'Pending',
+      approved: 'Approved',
+      scheduled: 'Scheduled',
+      paid: 'Paid',
+      cancelled: 'Cancelled',
+    }
+    return labels[status] || status
   }
 
   const filteredBills = bills.filter((bill) => {
-    if (filter !== 'all' && bill.status !== filter) return false
+    if (filter === 'overdue' && !bill.isOverdue) return false
+    if (filter !== 'all' && filter !== 'overdue' && bill.status !== filter) return false
     if (searchQuery && !bill.vendorName.toLowerCase().includes(searchQuery.toLowerCase())) {
       return false
     }
@@ -108,7 +128,7 @@ export default function VendorBillsPage() {
   })
 
   const totalDue = filteredBills.reduce((sum, b) => sum + b.balanceDue, 0)
-  const overdueBills = bills.filter((b) => b.status === 'overdue')
+  const overdueBills = bills.filter((b) => b.isOverdue)
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -209,10 +229,11 @@ export default function VendorBillsPage() {
               className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-foreground focus:outline-none"
             >
               <option value="all">All Status</option>
-              <option value="draft">Draft</option>
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
+              <option value="scheduled">Scheduled</option>
               <option value="paid">Paid</option>
+              <option value="cancelled">Cancelled</option>
               <option value="overdue">Overdue</option>
             </select>
           </div>
@@ -276,10 +297,10 @@ export default function VendorBillsPage() {
                     </td>
                     <td className="whitespace-nowrap px-6 py-4">
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${getStatusBadge(bill.status)}`}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium ${getStatusBadge(bill.status, bill.isOverdue)}`}
                       >
-                        {getStatusIcon(bill.status)}
-                        {bill.status}
+                        {getStatusIcon(bill.status, bill.isOverdue)}
+                        {getStatusLabel(bill.status, bill.isOverdue)}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium text-foreground">

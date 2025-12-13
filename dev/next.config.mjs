@@ -95,6 +95,9 @@ const nextConfig = {
   // Output standalone for optimized Docker deployment
   output: 'standalone',
 
+  // Ensure Next uses the project directory as the workspace root for tracing
+  outputFileTracingRoot: process.cwd(),
+
   // Reduce build output
   typescript: {
     // Don't fail production build on TypeScript errors (we check separately)
@@ -102,6 +105,8 @@ const nextConfig = {
   },
 
   eslint: {
+    // Linting is enforced via `npm run lint`; do not block builds
+    ignoreDuringBuilds: true,
     // Run ESLint on these directories during production builds
     dirs: ['app', 'components', 'lib'],
   },
