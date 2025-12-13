@@ -3,18 +3,18 @@ import { Button } from '@/components/ui/button'
 
 export function HeroSection() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-b from-gray-50 to-white py-20 sm:py-32">
+    <section className="relative overflow-hidden bg-white py-20 sm:py-32">
       <div className="container">
         <div className="mx-auto max-w-4xl text-center">
           {/* Feature Pills */}
           <div className="mb-8 flex justify-center gap-2 flex-wrap">
-            <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-900">
               240+ AI Tools
             </span>
-            <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-xs font-medium text-green-700">
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-900">
               Claude & Gemini AI
             </span>
-            <span className="inline-flex items-center rounded-full bg-purple-50 px-3 py-1 text-xs font-medium text-purple-700">
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-900">
               45-Day Guarantee
             </span>
           </div>
@@ -23,7 +23,7 @@ export function HeroSection() {
           <h1 className="text-5xl font-bold tracking-tight sm:text-7xl mb-6">
             The #1 AI-Powered
             <br />
-            <span className="text-blue-600">Legal Assistant</span>
+            <span className="text-gray-900">Legal Assistant</span>
           </h1>
 
           {/* Subheadline */}

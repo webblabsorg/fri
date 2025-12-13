@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db'
 import { Decimal } from '@prisma/client/runtime/library'
+import { getExchangeRate } from './exchange-rate-service'
+import { logDataEvent, extractRequestMetadata } from '@/lib/audit'
 
 // ============================================================================
 // CHART OF ACCOUNTS SERVICE
@@ -23,7 +25,13 @@ export interface UpdateAccountInput {
   parentId?: string | null
 }
 
-export async function createAccount(input: CreateAccountInput) {
+export interface CreateAccountOptions {
+  createdBy?: string
+  ipAddress?: string
+  userAgent?: string
+}
+
+export async function createAccount(input: CreateAccountInput, options?: CreateAccountOptions) {
   const account = await prisma.chartOfAccount.create({
     data: {
       organizationId: input.organizationId,
@@ -40,6 +48,30 @@ export async function createAccount(input: CreateAccountInput) {
       children: true,
     },
   })
+
+  // Audit log
+  if (options?.createdBy) {
+    try {
+      await logDataEvent('chart_of_account_created', {
+        organizationId: input.organizationId,
+        userId: options.createdBy,
+        resourceType: 'chart_of_account',
+        resourceId: account.id,
+        action: 'create',
+        ipAddress: options.ipAddress,
+        userAgent: options.userAgent,
+        details: {
+          accountNumber: input.accountNumber,
+          accountName: input.accountName,
+          accountType: input.accountType,
+          parentId: input.parentId,
+        },
+      })
+    } catch (err) {
+      console.warn('Failed to log audit event:', err)
+    }
+  }
+
   return account
 }
 
@@ -47,6 +79,7 @@ export async function getAccounts(organizationId: string, options?: {
   accountType?: string
   isActive?: boolean
   includeHierarchy?: boolean
+  rootOnly?: boolean
 }) {
   const where: Record<string, unknown> = { organizationId }
   
@@ -56,21 +89,114 @@ export async function getAccounts(organizationId: string, options?: {
   if (options?.isActive !== undefined) {
     where.isActive = options.isActive
   }
+  if (options?.rootOnly) {
+    where.parentId = null
+  }
 
   const accounts = await prisma.chartOfAccount.findMany({
     where,
     include: options?.includeHierarchy ? {
       parent: true,
-      children: {
-        include: {
-          children: true,
-        },
-      },
+      children: true,
     } : undefined,
     orderBy: { accountNumber: 'asc' },
   })
 
+  // If hierarchy requested, build full tree recursively
+  if (options?.includeHierarchy && options?.rootOnly) {
+    return buildAccountTree(accounts, organizationId)
+  }
+
   return accounts
+}
+
+/**
+ * Recursively build account tree with unlimited depth
+ */
+async function buildAccountTree(
+  accounts: Array<{ id: string; children?: Array<{ id: string }> } & Record<string, unknown>>,
+  organizationId: string,
+  depth = 0,
+  maxDepth = 20
+): Promise<Array<Record<string, unknown>>> {
+  if (depth >= maxDepth) return accounts
+
+  const result = []
+  for (const account of accounts) {
+    const children = await prisma.chartOfAccount.findMany({
+      where: { organizationId, parentId: account.id },
+      orderBy: { accountNumber: 'asc' },
+    })
+
+    if (children.length > 0) {
+      const nestedChildren = await buildAccountTree(children, organizationId, depth + 1, maxDepth)
+      result.push({ ...account, children: nestedChildren, depth })
+    } else {
+      result.push({ ...account, children: [], depth })
+    }
+  }
+  return result
+}
+
+/**
+ * Get flattened account list with hierarchy info (for dropdowns/reports)
+ */
+export async function getAccountsFlat(organizationId: string, options?: {
+  accountType?: string
+  isActive?: boolean
+}): Promise<Array<{
+  id: string
+  accountNumber: string
+  accountName: string
+  accountType: string
+  depth: number
+  path: string
+  fullName: string
+}>> {
+  const where: Record<string, unknown> = { organizationId }
+  if (options?.accountType) where.accountType = options.accountType
+  if (options?.isActive !== undefined) where.isActive = options.isActive
+
+  const accounts = await prisma.chartOfAccount.findMany({
+    where,
+    include: { parent: true },
+    orderBy: { accountNumber: 'asc' },
+  })
+
+  // Build path for each account
+  const accountMap = new Map(accounts.map(a => [a.id, a]))
+  
+  function getPath(account: typeof accounts[0]): string[] {
+    const path: string[] = [account.accountNumber]
+    let current = account
+    while (current.parentId && accountMap.has(current.parentId)) {
+      current = accountMap.get(current.parentId)!
+      path.unshift(current.accountNumber)
+    }
+    return path
+  }
+
+  function getDepth(account: typeof accounts[0]): number {
+    let depth = 0
+    let current = account
+    while (current.parentId && accountMap.has(current.parentId)) {
+      current = accountMap.get(current.parentId)!
+      depth++
+    }
+    return depth
+  }
+
+  return accounts.map(a => ({
+    id: a.id,
+    accountNumber: a.accountNumber,
+    accountName: a.accountName,
+    accountType: a.accountType,
+    depth: getDepth(a),
+    path: getPath(a).join(' > '),
+    fullName: getPath(a).length > 1 
+      ? `${'  '.repeat(getDepth(a))}${a.accountNumber} - ${a.accountName}`
+      : `${a.accountNumber} - ${a.accountName}`,
+  }))
 }
 
 export async function getAccountById(id: string, organizationId: string) {
@@ -87,14 +213,55 @@ export async function getAccountById(id: string, organizationId: string) {
   })
 }
 
-export async function updateAccount(id: string, organizationId: string, input: UpdateAccountInput) {
-  return prisma.chartOfAccount.update({
+export interface UpdateAccountOptions {
+  updatedBy?: string
+  ipAddress?: string
+  userAgent?: string
+}
+
+export async function updateAccount(
+  id: string, 
+  organizationId: string, 
+  input: UpdateAccountInput,
+  options?: UpdateAccountOptions
+) {
+  const account = await prisma.chartOfAccount.update({
     where: { id },
     data: input,
   })
+
+  // Audit log
+  if (options?.updatedBy) {
+    try {
+      await logDataEvent('chart_of_account_updated', {
+        organizationId,
+        userId: options.updatedBy,
+        resourceType: 'chart_of_account',
+        resourceId: id,
+        action: 'update',
+        ipAddress: options.ipAddress,
+        userAgent: options.userAgent,
+        details: { changes: input },
+      })
+    } catch (err) {
+      console.warn('Failed to log audit event:', err)
+    }
+  }
+
+  return account
 }
 
-export async function deactivateAccount(id: string, organizationId: string) {
+export interface DeactivateAccountOptions {
+  deactivatedBy?: string
+  ipAddress?: string
+  userAgent?: string
+}
+
+export async function deactivateAccount(
+  id: string, 
+  organizationId: string,
+  options?: DeactivateAccountOptions
+) {
   const account = await prisma.chartOfAccount.findFirst({
     where: { id, organizationId },
     include: { transactions: { take: 1 } },
@@ -104,14 +271,42 @@ export async function deactivateAccount(id: string, organizationId: string) {
     throw new Error('Account not found')
   }
 
+  let result
+  let action: 'update' | 'delete' = 'update'
+
   if (account.transactions.length > 0) {
-    return prisma.chartOfAccount.update({
+    result = await prisma.chartOfAccount.update({
       where: { id },
       data: { isActive: false },
     })
+  } else {
+    result = await prisma.chartOfAccount.delete({ where: { id } })
+    action = 'delete'
   }
 
-  return prisma.chartOfAccount.delete({ where: { id } })
+  // Audit log
+  if (options?.deactivatedBy) {
+    try {
+      await logDataEvent('chart_of_account_deactivated', {
+        organizationId,
+        userId: options.deactivatedBy,
+        resourceType: 'chart_of_account',
+        resourceId: id,
+        action,
+        ipAddress: options.ipAddress,
+        userAgent: options.userAgent,
+        details: {
+          accountNumber: account.accountNumber,
+          accountName: account.accountName,
+          hadTransactions: account.transactions.length > 0,
+        },
+      })
+    } catch (err) {
+      console.warn('Failed to log audit event:', err)
+    }
+  }
+
+  return result
 }
 
 // ============================================================================
@@ -125,6 +320,7 @@ export interface JournalEntryLineInput {
   description: string
   referenceId?: string
   referenceType?: string
+  currency?: string
 }
 
 export interface CreateJournalEntryInput {
@@ -134,6 +330,10 @@ export interface CreateJournalEntryInput {
   postedDate: Date
   entries: JournalEntryLineInput[]
   createdBy: string
+  baseCurrency?: string
+  sourceType?: string
+  sourceId?: string
+  autoPost?: boolean
 }
 
 export async function generateJournalNumber(organizationId: string): Promise<string> {
@@ -148,8 +348,50 @@ export async function generateJournalNumber(organizationId: string): Promise<str
 }
 
 export async function createJournalEntry(input: CreateJournalEntryInput) {
-  const totalDebit = input.entries.reduce((sum, e) => sum + e.debit, 0)
-  const totalCredit = input.entries.reduce((sum, e) => sum + e.credit, 0)
+  const baseCurrency = input.baseCurrency || 'USD'
+  
+  // Check for idempotency - if sourceType and sourceId provided, check if JE already exists
+  if (input.sourceType && input.sourceId) {
+    const existing = await prisma.generalLedgerEntry.findFirst({
+      where: {
+        organizationId: input.organizationId,
+        referenceType: input.sourceType,
+        referenceId: input.sourceId,
+      },
+      include: { journal: true },
+    })
+    if (existing?.journal) {
+      return existing.journal
+    }
+  }
+
+  // Process entries with multi-currency support
+  const processedEntries = await Promise.all(
+    input.entries.map(async (entry) => {
+      const entryCurrency = entry.currency || baseCurrency
+      let exchangeRate = 1
+      let baseCurrencyDebit = entry.debit
+      let baseCurrencyCredit = entry.credit
+
+      if (entryCurrency !== baseCurrency) {
+        exchangeRate = await getExchangeRate(entryCurrency, baseCurrency)
+        baseCurrencyDebit = entry.debit * exchangeRate
+        baseCurrencyCredit = entry.credit * exchangeRate
+      }
+
+      return {
+        ...entry,
+        currency: entryCurrency,
+        exchangeRate,
+        baseCurrencyDebit,
+        baseCurrencyCredit,
+      }
+    })
+  )
+
+  // Validate balance using base currency amounts
+  const totalDebit = processedEntries.reduce((sum, e) => sum + e.baseCurrencyDebit, 0)
+  const totalCredit = processedEntries.reduce((sum, e) => sum + e.baseCurrencyCredit, 0)
 
   if (Math.abs(totalDebit - totalCredit) > 0.01) {
     throw new Error('Journal entry must balance: debits must equal credits')
@@ -166,20 +408,24 @@ export async function createJournalEntry(input: CreateJournalEntryInput) {
       journalType: input.journalType,
       description: input.description,
       postedDate: input.postedDate,
-      status: 'draft',
+      status: input.autoPost ? 'posted' : 'draft',
       totalDebit: new Decimal(totalDebit),
       totalCredit: new Decimal(totalCredit),
       createdBy: input.createdBy,
+      approvedBy: input.autoPost ? input.createdBy : undefined,
+      approvedAt: input.autoPost ? new Date() : undefined,
       entries: {
-        create: input.entries.map((entry) => ({
+        create: processedEntries.map((entry) => ({
           organizationId: input.organizationId,
           accountId: entry.accountId,
           debit: new Decimal(entry.debit),
           credit: new Decimal(entry.credit),
           description: entry.description,
-          referenceId: entry.referenceId,
-          referenceType: entry.referenceType,
-          currency: 'USD',
+          referenceId: entry.referenceId || input.sourceId,
+          referenceType: entry.referenceType || input.sourceType,
+          currency: entry.currency,
+          exchangeRate: new Decimal(entry.exchangeRate),
+          baseCurrencyAmount: new Decimal(entry.baseCurrencyDebit - entry.baseCurrencyCredit),
           postedDate: input.postedDate,
           fiscalYear,
           fiscalPeriod,
@@ -193,6 +439,28 @@ export async function createJournalEntry(input: CreateJournalEntryInput) {
       },
     },
   })
+
+  // Audit log
+  try {
+    await logDataEvent('journal_entry_created', {
+      organizationId: input.organizationId,
+      userId: input.createdBy,
+      resourceType: 'journal_entry',
+      resourceId: journalEntry.id,
+      action: 'create',
+      details: {
+        journalNumber,
+        journalType: input.journalType,
+        totalDebit,
+        totalCredit,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        autoPosted: input.autoPost,
+      },
+    })
+  } catch (err) {
+    console.warn('Failed to log audit event:', err)
+  }
 
   return journalEntry
 }
@@ -486,6 +754,7 @@ export async function getIncomeStatement(organizationId: string, startDate: Date
 // ============================================================================
 
 export const ACCOUNT_TEMPLATES = {
+  // LITIGATION & TRIAL PRACTICE
   litigation: [
     { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
     { number: '1010', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
@@ -519,6 +788,7 @@ export const ACCOUNT_TEMPLATES = {
     { number: '6900', name: 'Expert Witness Fees (Non-Billable)', type: 'expense', normal: 'debit' },
     { number: '7000', name: 'Depreciation Expense', type: 'expense', normal: 'debit' },
   ],
+  // CORPORATE & BUSINESS LAW
   corporate: [
     { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
     { number: '1010', name: 'Cash - Client Trust', type: 'asset', normal: 'debit' },
@@ -535,6 +805,7 @@ export const ACCOUNT_TEMPLATES = {
     { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
     { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
   ],
+  // SOLO PRACTITIONER
   solo: [
     { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
     { number: '1010', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
@@ -549,6 +820,210 @@ export const ACCOUNT_TEMPLATES = {
     { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
     { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
   ],
+  // FAMILY LAW PRACTICE
+  family: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Accounts Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Unbilled Time', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Client Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '2200', name: 'Retainer Deposits', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Legal Fees - Divorce', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Legal Fees - Custody', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Legal Fees - Support', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Legal Fees - Mediation', type: 'revenue', normal: 'credit' },
+    { number: '4400', name: 'Reimbursed Expenses', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'Mediator Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Guardian Ad Litem Fees', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+  ],
+  // REAL ESTATE LAW
+  realEstate: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - Escrow Trust', type: 'asset', normal: 'debit' },
+    { number: '1020', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Accounts Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Unbilled Time', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Escrow Liability', type: 'liability', normal: 'credit' },
+    { number: '2110', name: 'Client Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Legal Fees - Closings', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Legal Fees - Title Work', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Legal Fees - Commercial', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Title Insurance Commissions', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'Title Search Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Recording Fees', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+  ],
+  // CRIMINAL DEFENSE
+  criminal: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Accounts Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Unbilled Time', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Client Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '2200', name: 'Unearned Retainers', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Legal Fees - Misdemeanor', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Legal Fees - Felony', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Legal Fees - DUI/DWI', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Legal Fees - Appeals', type: 'revenue', normal: 'credit' },
+    { number: '4400', name: 'Court-Appointed Fees', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'Investigator Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Expert Witness Fees', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+  ],
+  // IMMIGRATION LAW
+  immigration: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Accounts Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Unbilled Time', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Client Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '2200', name: 'Filing Fee Deposits', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Legal Fees - Family Petitions', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Legal Fees - Employment Visas', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Legal Fees - Naturalization', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Legal Fees - Asylum', type: 'revenue', normal: 'credit' },
+    { number: '4400', name: 'Legal Fees - Removal Defense', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'USCIS Filing Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Translation Services', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+  ],
+  // INTELLECTUAL PROPERTY
+  intellectualProperty: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - Client Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Accounts Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Unbilled Time', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Client Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '2200', name: 'Filing Fee Deposits', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Legal Fees - Patent Prosecution', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Legal Fees - Trademark', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Legal Fees - Copyright', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Legal Fees - IP Litigation', type: 'revenue', normal: 'credit' },
+    { number: '4400', name: 'Legal Fees - Licensing', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'USPTO Filing Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Patent Search Services', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+  ],
+  // BANKRUPTCY & RESTRUCTURING
+  bankruptcy: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Accounts Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Unbilled Time', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Client Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '2200', name: 'Court Filing Fee Deposits', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Legal Fees - Chapter 7', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Legal Fees - Chapter 13', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Legal Fees - Chapter 11', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Legal Fees - Creditor Representation', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'Court Filing Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Credit Counseling Fees', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+  ],
+  // PERSONAL INJURY / CONTINGENCY
+  personalInjury: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - Settlement Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Case Costs Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Contingency Fees Receivable', type: 'asset', normal: 'debit' },
+    { number: '1300', name: 'Case Cost Advances', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Settlement Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '2200', name: 'Medical Lien Payables', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Contingency Fees - Auto Accidents', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Contingency Fees - Premises Liability', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Contingency Fees - Medical Malpractice', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Contingency Fees - Product Liability', type: 'revenue', normal: 'credit' },
+    { number: '4400', name: 'Case Cost Reimbursements', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'Medical Records Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Expert Witness Fees', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+    { number: '6700', name: 'Case Advertising', type: 'expense', normal: 'debit' },
+  ],
+  // ESTATE PLANNING & PROBATE
+  estatePlanning: [
+    { number: '1000', name: 'Cash - Operating', type: 'asset', normal: 'debit' },
+    { number: '1010', name: 'Cash - IOLTA Trust', type: 'asset', normal: 'debit' },
+    { number: '1020', name: 'Cash - Estate Trust', type: 'asset', normal: 'debit' },
+    { number: '1100', name: 'Accounts Receivable', type: 'asset', normal: 'debit' },
+    { number: '1200', name: 'Unbilled Time', type: 'asset', normal: 'debit' },
+    { number: '2000', name: 'Accounts Payable', type: 'liability', normal: 'credit' },
+    { number: '2100', name: 'Client Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '2110', name: 'Estate Trust Liability', type: 'liability', normal: 'credit' },
+    { number: '3000', name: 'Partner Capital', type: 'equity', normal: 'credit' },
+    { number: '3100', name: 'Retained Earnings', type: 'equity', normal: 'credit' },
+    { number: '4000', name: 'Legal Fees - Estate Planning', type: 'revenue', normal: 'credit' },
+    { number: '4100', name: 'Legal Fees - Probate', type: 'revenue', normal: 'credit' },
+    { number: '4200', name: 'Legal Fees - Trust Administration', type: 'revenue', normal: 'credit' },
+    { number: '4300', name: 'Legal Fees - Guardianship', type: 'revenue', normal: 'credit' },
+    { number: '5000', name: 'Salaries & Wages', type: 'expense', normal: 'debit' },
+    { number: '6000', name: 'Rent', type: 'expense', normal: 'debit' },
+    { number: '6300', name: 'Court Filing Fees', type: 'expense', normal: 'debit' },
+    { number: '6400', name: 'Appraisal Fees', type: 'expense', normal: 'debit' },
+    { number: '6500', name: 'Malpractice Insurance', type: 'expense', normal: 'debit' },
+    { number: '6600', name: 'Technology & Software', type: 'expense', normal: 'debit' },
+  ],
+}
+
+/**
+ * Get list of available chart of accounts templates
+ */
+export function getAvailableTemplates(): Array<{ key: string; name: string; description: string }> {
+  return [
+    { key: 'litigation', name: 'Litigation & Trial Practice', description: 'For civil litigation, trials, and dispute resolution' },
+    { key: 'corporate', name: 'Corporate & Business Law', description: 'For transactional, M&A, and business advisory' },
+    { key: 'solo', name: 'Solo Practitioner', description: 'Simplified chart for solo practices' },
+    { key: 'family', name: 'Family Law', description: 'For divorce, custody, and family matters' },
+    { key: 'realEstate', name: 'Real Estate Law', description: 'For closings, title work, and property transactions' },
+    { key: 'criminal', name: 'Criminal Defense', description: 'For criminal defense and DUI practices' },
+    { key: 'immigration', name: 'Immigration Law', description: 'For visa, naturalization, and immigration matters' },
+    { key: 'intellectualProperty', name: 'Intellectual Property', description: 'For patents, trademarks, and IP litigation' },
+    { key: 'bankruptcy', name: 'Bankruptcy & Restructuring', description: 'For Chapter 7, 11, 13 and creditor work' },
+    { key: 'personalInjury', name: 'Personal Injury / Contingency', description: 'For PI, med mal, and contingency practices' },
+    { key: 'estatePlanning', name: 'Estate Planning & Probate', description: 'For wills, trusts, and probate administration' },
+  ]
 }
 
 export async function initializeChartOfAccounts(

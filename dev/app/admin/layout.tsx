@@ -119,7 +119,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4"></div>
           <p className="text-gray-600">Verifying admin access...</p>
         </div>
       </div>
@@ -155,7 +155,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   href={item.href}
                   className={`flex items-center gap-3 px-3 py-2 rounded-md mb-1 transition-colors ${
                     isActive
-                      ? 'bg-blue-600 text-white'
+                      ? 'bg-white text-gray-900'
                       : 'text-gray-300 hover:bg-gray-800 hover:text-white'
                   }`}
                 >
@@ -168,7 +168,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
           <div className="absolute bottom-0 w-64 p-4 border-t border-gray-800">
             <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center font-semibold">
+              <div className="w-10 h-10 rounded-full bg-white text-gray-900 flex items-center justify-center font-semibold">
                 {user.name.charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">

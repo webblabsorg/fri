@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db'
 import { Decimal } from '@prisma/client/runtime/library'
+import { createExpenseJournalEntry, createVendorBillJournalEntry, createVendorPaymentJournalEntry } from './accounting-automation'
+import { categorizeExpense, learnFromCorrection } from './ai-financial-service'
 
 // ============================================================================
 // EXPENSE SERVICE
@@ -11,7 +13,7 @@ export interface CreateExpenseInput {
   clientId?: string
   userId: string
   vendorId?: string
-  category: string
+  category?: string
   subcategory?: string
   description: string
   amount: number
@@ -27,6 +29,8 @@ export interface CreateExpenseInput {
   mileageStart?: string
   mileageEnd?: string
   paymentMethod?: string
+  vendorName?: string
+  autoCategorize?: boolean
 }
 
 export async function generateExpenseNumber(organizationId: string): Promise<string> {
@@ -48,6 +52,41 @@ export async function createExpense(input: CreateExpenseInput) {
     amount = input.mileageDistance * input.mileageRate
   }
 
+  // AI auto-categorization if enabled and category not provided
+  let category = input.category
+  let subcategory = input.subcategory
+  let isBillable = input.isBillable
+  let aiCategorizationData: Record<string, unknown> | null = null
+
+  if (input.autoCategorize && !category) {
+    try {
+      const aiResult = await categorizeExpense(
+        input.organizationId,
+        input.description,
+        input.vendorName,
+        amount
+      )
+      category = aiResult.category
+      subcategory = aiResult.subcategory || subcategory
+      isBillable = aiResult.isBillable ?? isBillable
+      aiCategorizationData = {
+        aiCategorized: true,
+        confidence: aiResult.confidence,
+        suggestedAccountId: aiResult.suggestedAccountId,
+        alternativeCategories: aiResult.alternativeCategories,
+        categorizedAt: new Date().toISOString(),
+      }
+    } catch (err) {
+      console.warn('AI categorization failed, using default:', err)
+      category = 'other'
+    }
+  }
+
+  // Ensure category has a value
+  if (!category) {
+    category = 'other'
+  }
+
   return prisma.expense.create({
     data: {
       expenseNumber,
@@ -56,16 +95,17 @@ export async function createExpense(input: CreateExpenseInput) {
       clientId: input.clientId,
       userId: input.userId,
       vendorId: input.vendorId,
-      category: input.category,
-      subcategory: input.subcategory,
+      category,
+      subcategory,
       description: input.description,
       amount: new Decimal(amount),
       currency: input.currency || 'USD',
       taxAmount: new Decimal(input.taxAmount || 0),
       expenseDate: input.expenseDate,
-      isBillable: input.isBillable ?? true,
+      isBillable: isBillable ?? true,
       markupPercent: input.markupPercent ? new Decimal(input.markupPercent) : null,
       receiptUrl: input.receiptUrl,
+      receiptOcrData: aiCategorizationData ? JSON.stringify(aiCategorizationData) : undefined,
       isMileage: input.isMileage || false,
       mileageDistance: input.mileageDistance ? new Decimal(input.mileageDistance) : null,
       mileageRate: input.mileageRate ? new Decimal(input.mileageRate) : null,
@@ -168,6 +208,23 @@ export async function updateExpense(
     throw new Error('Expense not found or cannot be edited')
   }
 
+  // If category is being changed and expense was AI-categorized, learn from correction
+  if (data.category && data.category !== expense.category && expense.receiptOcrData) {
+    try {
+      const ocrData = JSON.parse(expense.receiptOcrData as string)
+      if (ocrData.aiCategorized) {
+        await learnFromCorrection(
+          organizationId,
+          expense.description,
+          ocrData.category || expense.category,
+          data.category
+        )
+      }
+    } catch (err) {
+      console.warn('Failed to learn from category correction:', err)
+    }
+  }
+
   return prisma.expense.update({
     where: { id },
     data: {
@@ -228,7 +285,7 @@ export async function approveExpense(id: string, organizationId: string, approve
     throw new Error('Expense not found or cannot be approved')
   }
 
-  return prisma.expense.update({
+  const updated = await prisma.expense.update({
     where: { id },
     data: {
       status: 'approved',
@@ -237,6 +294,22 @@ export async function approveExpense(id: string, organizationId: string, approve
       approvedAt: new Date(),
     },
   })
+
+  // Create accounting journal entry for approved expense
+  try {
+    await createExpenseJournalEntry(
+      organizationId,
+      id,
+      expense.category,
+      Number(expense.amount),
+      expense.paymentMethod || 'other',
+      approvedBy
+    )
+  } catch (err) {
+    console.warn('Failed to create expense journal entry:', err)
+  }
+
+  return updated
 }
 
 export async function rejectExpense(
@@ -426,7 +499,7 @@ export interface CreateVendorBillInput {
 export async function createVendorBill(input: CreateVendorBillInput) {
   const totalAmount = input.subtotal + (input.taxAmount || 0)
 
-  return prisma.vendorBill.create({
+  const bill = await prisma.vendorBill.create({
     data: {
       billNumber: input.billNumber,
       organizationId: input.organizationId,
@@ -461,6 +534,21 @@ export async function createVendorBill(input: CreateVendorBillInput) {
       lineItems: true,
     },
   })
+
+  // Create accounting journal entry for vendor bill
+  try {
+    await createVendorBillJournalEntry(
+      input.organizationId,
+      bill.id,
+      input.vendorId,
+      totalAmount,
+      input.createdBy
+    )
+  } catch (err) {
+    console.warn('Failed to create vendor bill journal entry:', err)
+  }
+
+  return bill
 }
 
 export async function getVendorBills(organizationId: string, options?: {
@@ -564,8 +652,8 @@ export async function payVendorBill(
     throw new Error('Bill not found or not approved')
   }
 
-  return prisma.$transaction(async (tx) => {
-    const payment = await tx.vendorPayment.create({
+  const payment = await prisma.$transaction(async (tx) => {
+    const pmt = await tx.vendorPayment.create({
       data: {
         organizationId,
         vendorId: bill.vendorId,
@@ -604,8 +692,23 @@ export async function payVendorBill(
       },
     })
 
-    return payment
+    return pmt
   })
+
+  // Create accounting journal entry for vendor payment
+  try {
+    await createVendorPaymentJournalEntry(
+      organizationId,
+      payment.id,
+      bill.vendorId,
+      paymentData.amount,
+      paymentData.processedBy
+    )
+  } catch (err) {
+    console.warn('Failed to create vendor payment journal entry:', err)
+  }
+
+  return payment
 }
 
 // ============================================================================
@@ -855,3 +958,257 @@ export async function get1099Report(organizationId: string, taxYear: number) {
 
 // Current IRS mileage rate (2024)
 export const CURRENT_MILEAGE_RATE = 0.67
+
+// ============================================================================
+// RECEIPT UPLOAD & OCR
+// ============================================================================
+
+export interface ReceiptOcrResult {
+  vendorName?: string
+  amount?: number
+  date?: string
+  taxAmount?: number
+  category?: string
+  confidence: number
+  [key: string]: string | number | undefined
+}
+
+export async function uploadReceipt(
+  expenseId: string,
+  organizationId: string,
+  receiptUrl: string,
+  ocrData?: ReceiptOcrResult
+) {
+  const expense = await prisma.expense.findFirst({
+    where: { id: expenseId, organizationId },
+  })
+
+  if (!expense) {
+    throw new Error('Expense not found')
+  }
+
+  return prisma.expense.update({
+    where: { id: expenseId },
+    data: {
+      receiptUrl,
+      receiptOcrData: ocrData || {
+        message: 'OCR processing pending - requires integration with OCR provider',
+        uploadedAt: new Date().toISOString(),
+      },
+    },
+  })
+}
+
+export async function processReceiptOcr(receiptUrl: string): Promise<ReceiptOcrResult> {
+  const apiKey = process.env.GOOGLE_VISION_API_KEY
+  if (!apiKey) {
+    return {
+      vendorName: undefined,
+      amount: undefined,
+      date: undefined,
+      taxAmount: undefined,
+      category: undefined,
+      confidence: 0,
+      provider: 'none',
+    }
+  }
+
+  const response = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [
+          {
+            image: { source: { imageUri: receiptUrl } },
+            features: [{ type: 'TEXT_DETECTION' }],
+          },
+        ],
+      }),
+    }
+  )
+
+  if (!response.ok) {
+    return {
+      vendorName: undefined,
+      amount: undefined,
+      date: undefined,
+      taxAmount: undefined,
+      category: undefined,
+      confidence: 0,
+      provider: 'google_vision',
+      error: `vision_http_${response.status}`,
+    }
+  }
+
+  const json = (await response.json()) as any
+  const text: string =
+    String(
+      json?.responses?.[0]?.fullTextAnnotation?.text ||
+        json?.responses?.[0]?.textAnnotations?.[0]?.description ||
+        ''
+    )
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((l: string) => l.trim())
+    .filter(Boolean)
+
+  const vendorName = lines[0]
+
+  const findMoney = (label: string) => {
+    const re = new RegExp(`${label}[^0-9]*([0-9]+(?:\\.[0-9]{2})?)`, 'i')
+    const m = text.match(re)
+    if (m?.[1]) return parseFloat(m[1])
+    return undefined
+  }
+
+  const taxAmount = findMoney('tax')
+
+  let amount =
+    findMoney('total') ||
+    findMoney('amount due') ||
+    findMoney('balance due')
+
+  if (amount === undefined) {
+    const moneyMatches = Array.from(
+      text.matchAll(/\$\s*([0-9]{1,6}(?:,[0-9]{3})*(?:\.[0-9]{2})?)/g)
+    )
+      .map((m: RegExpMatchArray) => parseFloat(String(m[1]).replace(/,/g, '')))
+      .filter((n) => Number.isFinite(n))
+
+    if (moneyMatches.length > 0) {
+      amount = Math.max(...moneyMatches)
+    }
+  }
+
+  const dateMatch =
+    text.match(/\b(\d{4}-\d{2}-\d{2})\b/) ||
+    text.match(/\b(\d{1,2}\/\d{1,2}\/\d{2,4})\b/) ||
+    text.match(/\b(\d{1,2}-\d{1,2}-\d{2,4})\b/)
+  const date = dateMatch?.[1]
+
+  let confidence = 0
+  if (text) confidence += 0.25
+  if (vendorName) confidence += 0.2
+  if (amount !== undefined) confidence += 0.3
+  if (date) confidence += 0.15
+  if (taxAmount !== undefined) confidence += 0.1
+  confidence = Math.min(1, confidence)
+
+  return {
+    vendorName,
+    amount,
+    date,
+    taxAmount,
+    category: undefined,
+    confidence,
+    provider: 'google_vision',
+    rawText: text.slice(0, 5000),
+  }
+}
+
+// ============================================================================
+// BATCH VENDOR BILL PAYMENT
+// ============================================================================
+
+export interface BatchPaymentInput {
+  billId: string
+  amount: number
+  paymentMethod: string
+  paymentDate: Date
+  checkNumber?: string
+  referenceNumber?: string
+  notes?: string
+}
+
+export async function batchPayVendorBills(
+  organizationId: string,
+  payments: BatchPaymentInput[],
+  processedBy: string
+) {
+  const results: Array<{
+    billId: string
+    success: boolean
+    payment?: unknown
+    error?: string
+  }> = []
+
+  for (const paymentInput of payments) {
+    try {
+      const payment = await payVendorBill(
+        paymentInput.billId,
+        organizationId,
+        {
+          amount: paymentInput.amount,
+          paymentMethod: paymentInput.paymentMethod,
+          paymentDate: paymentInput.paymentDate,
+          checkNumber: paymentInput.checkNumber,
+          referenceNumber: paymentInput.referenceNumber,
+          notes: paymentInput.notes,
+          processedBy,
+        }
+      )
+      results.push({ billId: paymentInput.billId, success: true, payment })
+    } catch (error) {
+      results.push({
+        billId: paymentInput.billId,
+        success: false,
+        error: (error as Error).message,
+      })
+    }
+  }
+
+  return {
+    total: payments.length,
+    successful: results.filter((r) => r.success).length,
+    failed: results.filter((r) => !r.success).length,
+    totalAmount: payments
+      .filter((_, i) => results[i].success)
+      .reduce((sum, p) => sum + p.amount, 0),
+    results,
+  }
+}
+
+// ============================================================================
+// EXPENSE POLICY UPDATE
+// ============================================================================
+
+export async function updateExpensePolicy(
+  id: string,
+  organizationId: string,
+  data: Partial<{
+    policyName: string
+    category: string
+    maxAmount: number
+    requiresApproval: boolean
+    approvalThreshold: number
+    requiresReceipt: boolean
+    receiptThreshold: number
+    isActive: boolean
+  }>
+) {
+  const policy = await prisma.expensePolicy.findFirst({
+    where: { id, organizationId },
+  })
+
+  if (!policy) {
+    throw new Error('Expense policy not found')
+  }
+
+  return prisma.expensePolicy.update({
+    where: { id },
+    data: {
+      policyName: data.policyName,
+      category: data.category,
+      maxAmount: data.maxAmount !== undefined ? new Decimal(data.maxAmount) : undefined,
+      requiresApproval: data.requiresApproval,
+      approvalThreshold: data.approvalThreshold !== undefined ? new Decimal(data.approvalThreshold) : undefined,
+      requiresReceipt: data.requiresReceipt,
+      receiptThreshold: data.receiptThreshold !== undefined ? new Decimal(data.receiptThreshold) : undefined,
+      isActive: data.isActive,
+    },
+  })
+}
+

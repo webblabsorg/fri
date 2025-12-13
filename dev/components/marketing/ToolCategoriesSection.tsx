@@ -37,7 +37,7 @@ export function ToolCategoriesSection() {
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="text-3xl">{category.icon}</div>
-                <span className="text-sm font-medium text-blue-600">
+                <span className="text-sm font-medium text-gray-900">
                   {category.count} tools
                 </span>
               </div>
@@ -52,7 +52,7 @@ export function ToolCategoriesSection() {
         <div className="text-center mt-12">
           <Link
             href="/ai-tools"
-            className="inline-flex items-center text-blue-600 hover:text-blue-700 font-semibold"
+            className="inline-flex items-center text-gray-900 hover:text-gray-700 font-semibold underline"
           >
             View All 240+ Tools →
           </Link>

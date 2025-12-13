@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import OrganizationSwitcher from '@/components/layout/OrganizationSwitcher'
+import ThemeToggle from '@/components/layout/ThemeToggle'
 import { 
   Home, 
   Wrench, 
@@ -150,19 +151,10 @@ export default function DashboardLayout({
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ]
 
-  const getTierBadgeColor = (tier: string) => {
-    switch (tier.toLowerCase()) {
-      case 'pro': return 'bg-blue-100 text-blue-800'
-      case 'professional': return 'bg-purple-100 text-purple-800'
-      case 'enterprise': return 'bg-yellow-100 text-yellow-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground"></div>
       </div>
     )
   }
@@ -172,27 +164,27 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="dashboard-theme min-h-screen bg-background">
       {/* Mobile sidebar backdrop */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 z-40 bg-black bg-opacity-50 lg:hidden"
+          className="fixed inset-0 z-40 bg-background/60 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar - fixed on all screen sizes */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex flex-col h-full">
           {/* Logo */}
-          <div className="flex items-center justify-between h-16 px-4 border-b">
+          <div className="flex items-center justify-between h-16 px-4 border-b border-border">
             <Link href="/dashboard" className="flex items-center gap-2">
-              <span className="text-xl font-bold text-blue-600">Frith AI</span>
+              <span className="text-xl font-bold text-foreground">Frith AI</span>
               {/* Show Beta badge if not removed */}
               {launchSettings && !launchSettings.betaBadgeRemoved && (
-                <Badge className="bg-yellow-100 text-yellow-800 text-xs">Beta</Badge>
+                <Badge variant="outline" className="text-xs">Beta</Badge>
               )}
             </Link>
             <Button
@@ -206,28 +198,26 @@ export default function DashboardLayout({
           </div>
 
           {/* User info */}
-          <div className="p-4 border-b">
+          <div className="p-4 border-b border-border">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                <User className="w-4 h-4 text-blue-600" />
+              <div className="w-8 h-8 border border-border rounded-full flex items-center justify-center bg-background">
+                <User className="w-4 h-4 text-foreground" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-                <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                <p className="text-sm font-medium text-foreground truncate">{user.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{user.email}</p>
               </div>
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
-              <Badge className={getTierBadgeColor(user.subscriptionTier)} variant="secondary">
+              <Badge variant="secondary">
                 {user.subscriptionTier}
               </Badge>
               {user.earlyAdopter && (
-                <Badge className="bg-gradient-to-r from-purple-500 to-pink-500 text-white border-0">
-                  ⭐ Early Adopter
-                </Badge>
+                <Badge variant="outline">Early Adopter</Badge>
               )}
             </div>
             {user.betaTrialEndsAt && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Beta trial ends: {new Date(user.betaTrialEndsAt).toLocaleDateString()}
               </p>
             )}
@@ -243,8 +233,8 @@ export default function DashboardLayout({
                   href={item.href}
                   className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
                     isActive
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                   }`}
                   onClick={() => setSidebarOpen(false)}
                 >
@@ -256,10 +246,10 @@ export default function DashboardLayout({
           </nav>
 
           {/* Sign out */}
-          <div className="p-4 border-t">
+          <div className="p-4 border-t border-border">
             <Button
               variant="ghost"
-              className="w-full justify-start text-gray-600 hover:text-gray-900"
+              className="w-full justify-start text-muted-foreground hover:text-foreground"
               onClick={handleSignOut}
             >
               <LogOut className="w-4 h-4 mr-3" />
@@ -272,7 +262,7 @@ export default function DashboardLayout({
       {/* Main content */}
       <div className="lg:ml-64">
         {/* Top header */}
-        <header className="bg-white shadow-sm border-b">
+        <header className="bg-card border-b border-border">
           <div className="flex items-center justify-between h-16 px-4 lg:px-6">
             {/* Mobile menu button */}
             <Button
@@ -291,10 +281,11 @@ export default function DashboardLayout({
 
             {/* Notifications */}
             <div className="flex items-center gap-4">
+              <ThemeToggle />
               <Button variant="ghost" size="sm" className="relative">
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}

@@ -88,12 +88,12 @@ export function PricingSection() {
               key={index}
               className={`relative p-8 border rounded-lg ${
                 plan.popular
-                  ? 'border-blue-600 shadow-lg ring-2 ring-blue-600'
+                  ? 'border-gray-900 shadow-lg ring-2 ring-gray-900'
                   : 'border-gray-200'
               }`}
             >
               {plan.popular && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-xs font-semibold px-3 py-1 rounded-full">
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-xs font-semibold px-3 py-1 rounded-full">
                   Most Popular
                 </span>
               )}
@@ -111,7 +111,7 @@ export function PricingSection() {
                 {plan.features.map((feature, idx) => (
                   <li key={idx} className="flex items-start text-sm">
                     <svg
-                      className="h-5 w-5 text-green-500 mr-2 flex-shrink-0"
+                      className="h-5 w-5 text-gray-900 mr-2 flex-shrink-0"
                       fill="none"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -141,7 +141,7 @@ export function PricingSection() {
         <div className="mt-12 text-center">
           <Link
             href="/pricing"
-            className="text-blue-600 hover:text-blue-700 font-semibold"
+            className="text-gray-900 hover:text-gray-700 font-semibold underline"
           >
             View Detailed Pricing Comparison →
           </Link>

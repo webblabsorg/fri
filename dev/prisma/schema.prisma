@@ -142,6 +142,7 @@ model Organization {
   vendorBills       VendorBill[]
   vendorPayments    VendorPayment[]
   expensePolicies   ExpensePolicy[]
+  financialAnomalies FinancialAnomaly[]
 
   @@index([status])
 }
@@ -2725,4 +2726,49 @@ model ExpensePolicy {
   @@index([organizationId])
   @@index([category])
   @@index([isActive])
+}
+
+// ============================================================================
+// PHASE 12.1.1: AI FINANCIAL ANOMALY DETECTION
+// ============================================================================
+
+model FinancialAnomaly {
+  id                String   @id @default(uuid())
+  organizationId    String
+  
+  // Transaction reference
+  transactionType   String   // expense, journal_entry, payment, trust_transaction, invoice
+  transactionId     String
+  
+  // Anomaly details
+  anomalyType       String   // unusual_amount, unusual_pattern, duplicate, timing, potential_fraud, policy_violation
+  severity          String   // low, medium, high, critical
+  confidence        Decimal  @db.Decimal(5, 2) // 0-100
+  description       String
+  amount            Decimal? @db.Decimal(15, 2)
+  
+  // Detection metadata
+  detectedAt        DateTime @default(now())
+  detectionMethod   String?  // rule_based, ml_model, pattern_analysis
+  metadata          Json?    // Additional context data
+  
+  // Review workflow
+  status            String   @default("pending") // pending, reviewed, resolved, dismissed, escalated
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  resolution        String?  // approved, rejected, corrected, flagged_fraud
+  resolutionNotes   String?
+  
+  // Timestamps
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  
+  @@unique([organizationId, transactionType, transactionId, anomalyType])
+  @@index([organizationId])
+  @@index([transactionType])
+  @@index([severity])
+  @@index([status])
+  @@index([detectedAt])
 }

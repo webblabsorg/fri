@@ -1,0 +1,163 @@
+{
+  "name": "frith-phase-12.1.1",
+  "version": "1.0.0",
+  "description": "Phase 12.1.1: Chart of Accounts & General Ledger - Frith AI Legal ERP",
+  "releaseDate": "2025-12-13",
+  "phase": "12.1.1",
+  "phaseName": "Chart of Accounts & General Ledger",
+  "status": "production-ready",
+  
+  "files": {
+    "services": [
+      "dev/lib/finance/finance-service.ts",
+      "dev/lib/finance/ai-financial-service.ts",
+      "dev/lib/finance/auto-journal-service.ts",
+      "dev/lib/finance/exchange-rate-service.ts"
+    ],
+    "apiRoutes": [
+      "dev/app/api/finance/accounts/route.ts",
+      "dev/app/api/finance/accounts/[id]/route.ts",
+      "dev/app/api/finance/journal-entries/route.ts",
+      "dev/app/api/finance/journal-entries/[id]/route.ts",
+      "dev/app/api/finance/journal-entries/[id]/post/route.ts",
+      "dev/app/api/finance/journal-entries/[id]/reverse/route.ts",
+      "dev/app/api/finance/ledger/route.ts",
+      "dev/app/api/finance/trial-balance/route.ts",
+      "dev/app/api/finance/balance-sheet/route.ts",
+      "dev/app/api/finance/income-statement/route.ts",
+      "dev/app/api/finance/ai/categorize/route.ts",
+      "dev/app/api/finance/ai/cash-flow-forecast/route.ts",
+      "dev/app/api/finance/ai/anomaly-detection/route.ts",
+      "dev/app/api/finance/ai/suggest-accounts/route.ts",
+      "dev/app/api/finance/ai/expense-split/route.ts",
+      "dev/app/api/finance/auto-journal/route.ts"
+    ],
+    "components": [
+      "dev/components/finance/ChartOfAccountsPage.tsx",
+      "dev/components/finance/GeneralLedgerPage.tsx",
+      "dev/components/finance/FinancialDashboard.tsx"
+    ],
+    "database": [
+      "dev/prisma/schema.prisma"
+    ],
+    "scripts": [
+      "prod/scripts/phase-12.1.1-deploy.ps1",
+      "prod/scripts/phase-12.1.1-test.js"
+    ],
+    "documentation": [
+      "notes/PHASE-12-COMPLETE-PART1.md",
+      "notes/PHASE-12.1.1-IMPLEMENTATION-COMPLETE.md"
+    ]
+  },
+  
+  "features": {
+    "chartOfAccounts": {
+      "templates": [
+        "litigation",
+        "corporate",
+        "solo",
+        "family",
+        "realEstate",
+        "criminal",
+        "immigration",
+        "intellectualProperty",
+        "bankruptcy",
+        "personalInjury",
+        "estatePlanning"
+      ],
+      "capabilities": [
+        "Unlimited hierarchy depth",
+        "Multi-currency support (190+ currencies)",
+        "Parent/child relationships",
+        "Account activation/deactivation",
+        "AI-powered structure suggestions"
+      ]
+    },
+    "generalLedger": {
+      "capabilities": [
+        "Double-entry bookkeeping",
+        "GAAP/IFRS compliant",
+        "Automatic journal entries",
+        "Multi-entity support",
+        "Fiscal year/period tracking",
+        "Reconciliation tracking"
+      ]
+    },
+    "aiFeatures": {
+      "expenseCategorization": {
+        "categories": 12,
+        "learnsFromCorrections": true,
+        "targetAccuracy": ">85%"
+      },
+      "cashFlowForecasting": {
+        "forecastPeriod": "3 months",
+        "updateFrequency": "weekly",
+        "targetAccuracy": ">80%"
+      },
+      "anomalyDetection": {
+        "transactionTypes": ["expense", "journal_entry", "payment", "trust_transaction"],
+        "severityLevels": ["low", "medium", "high", "critical"],
+        "detectionTypes": ["unusual_amount", "unusual_pattern", "duplicate", "timing", "potential_fraud"]
+      },
+      "smartExpenseSplitting": {
+        "basedOn": "time allocation",
+        "period": "30 days"
+      }
+    },
+    "financialReports": [
+      "General Ledger",
+      "Trial Balance",
+      "Balance Sheet",
+      "Income Statement"
+    ]
+  },
+  
+  "acceptanceCriteria": {
+    "unlimitedHierarchyDepth": {
+      "status": "implemented",
+      "maxDepth": 20
+    },
+    "journalEntriesBalance": {
+      "status": "implemented",
+      "tolerance": 0.01
+    },
+    "multiCurrencyConversion": {
+      "status": "implemented",
+      "currencies": 190
+    },
+    "aiCategorizationAccuracy": {
+      "status": "pending_validation",
+      "target": ">85%"
+    },
+    "cashFlowForecastAccuracy": {
+      "status": "pending_validation",
+      "target": ">80%",
+      "validationPeriod": "3 months"
+    },
+    "uiDesignSystem": {
+      "status": "implemented",
+      "scheme": "deep black/white"
+    }
+  },
+  
+  "dependencies": {
+    "runtime": {
+      "node": ">=18.0.0",
+      "next": ">=14.0.0",
+      "prisma": ">=5.0.0"
+    },
+    "database": {
+      "postgresql": ">=14.0"
+    }
+  },
+  
+  "deployment": {
+    "script": "prod/scripts/phase-12.1.1-deploy.ps1",
+    "testScript": "prod/scripts/phase-12.1.1-test.js",
+    "requiredEnvVars": [
+      "DATABASE_URL",
+      "NEXTAUTH_SECRET",
+      "NEXTAUTH_URL"
+    ]
+  }
+}

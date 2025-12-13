@@ -1,20 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
+import { getSessionUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession()
-    if (!session?.user) {
+    const sessionToken = request.cookies.get('session')?.value
+    if (!sessionToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = (session.user as any).id
+    const user = await getSessionUser(sessionToken)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const limit = parseInt(searchParams.get('limit') || '50')
     const unreadOnly = searchParams.get('unreadOnly') === 'true'
 
-    const where: any = { userId }
+    const where: any = { userId: user.id }
     if (unreadOnly) {
       where.read = false
     }
@@ -28,7 +32,7 @@ export async function GET(request: NextRequest) {
     // Get unread count
     const unreadCount = await prisma.notification.count({
       where: {
-        userId,
+        userId: user.id,
         read: false
       }
     })
@@ -45,12 +49,16 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getServerSession()
-    if (!session?.user) {
+    const sessionToken = request.cookies.get('session')?.value
+    if (!sessionToken) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const userId = (session.user as any).id
+    const user = await getSessionUser(sessionToken)
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { notificationIds, action } = body
 
@@ -60,14 +68,14 @@ export async function PATCH(request: NextRequest) {
         await prisma.notification.updateMany({
           where: {
             id: { in: notificationIds },
-            userId
+            userId: user.id
           },
           data: { read: true }
         })
       } else {
         // Mark all notifications as read
         await prisma.notification.updateMany({
-          where: { userId },
+          where: { userId: user.id },
           data: { read: true }
         })
       }
@@ -78,7 +86,7 @@ export async function PATCH(request: NextRequest) {
         await prisma.notification.deleteMany({
           where: {
             id: { in: notificationIds },
-            userId
+            userId: user.id
           }
         })
       }

@@ -23,15 +23,15 @@ export function Switch({ checked = false, onCheckedChange, className, ...props }
       aria-checked={checked}
       onClick={handleClick}
       className={cn(
-        'relative inline-flex h-6 w-11 items-center rounded-full border border-gray-300 transition-colors',
-        checked ? 'bg-blue-600' : 'bg-gray-200',
+        'relative inline-flex h-6 w-11 items-center rounded-full border border-border transition-colors',
+        checked ? 'bg-primary' : 'bg-muted',
         className,
       )}
       {...props}
     >
       <span
         className={cn(
-          'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+          'inline-block h-4 w-4 transform rounded-full bg-background shadow transition-transform',
           checked ? 'translate-x-5' : 'translate-x-1',
         )}
       />

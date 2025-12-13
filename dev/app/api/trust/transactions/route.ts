@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { createTrustTransaction, getTrustTransactions } from '@/lib/finance/trust-service'
+import { getAuditContext } from '@/lib/audit-context'
 
 export async function GET(request: NextRequest) {
   try {
@@ -119,6 +120,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
+    const auditContext = getAuditContext(request)
+
     const transaction = await createTrustTransaction({
       trustAccountId,
       clientLedgerId,
@@ -133,6 +136,7 @@ export async function POST(request: NextRequest) {
       toAccount,
       transactionDate: transactionDate ? new Date(transactionDate) : new Date(),
       createdBy: user.id,
+      auditContext,
     })
 
     return NextResponse.json({ transaction }, { status: 201 })

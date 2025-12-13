@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db'
 import { Decimal } from '@prisma/client/runtime/library'
+import { createInvoiceJournalEntry, createPaymentJournalEntry } from './accounting-automation'
 
 // ============================================================================
 // INVOICE SERVICE
@@ -118,6 +119,19 @@ export async function createInvoice(
       matter: true,
     },
   })
+
+  // Create accounting journal entry for invoice
+  try {
+    await createInvoiceJournalEntry(
+      input.organizationId,
+      invoice.id,
+      input.clientId,
+      totalAmount,
+      input.createdBy
+    )
+  } catch (err) {
+    console.warn('Failed to create invoice journal entry:', err)
+  }
 
   return invoice
 }
@@ -385,6 +399,22 @@ export async function createPayment(input: CreatePaymentInput) {
 
     return pmt
   })
+
+  // Create accounting journal entry for payment
+  if (input.invoiceId) {
+    try {
+      await createPaymentJournalEntry(
+        input.organizationId,
+        payment.id,
+        input.invoiceId,
+        input.amount,
+        input.paymentMethod,
+        input.processedBy
+      )
+    } catch (err) {
+      console.warn('Failed to create payment journal entry:', err)
+    }
+  }
 
   return payment
 }
@@ -895,4 +925,240 @@ export async function getWriteOffSuggestions(organizationId: string) {
       reason: `Invoice is ${daysOverdue} days overdue`,
     }
   })
+}
+
+// ============================================================================
+// INVOICE REMINDERS
+// ============================================================================
+
+export interface CreateReminderInput {
+  invoiceId: string
+  reminderType: 'first' | 'second' | 'final' | 'custom'
+  scheduledFor: Date
+  emailTo: string
+  emailSubject: string
+  emailBody: string
+}
+
+export async function createInvoiceReminder(input: CreateReminderInput) {
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: input.invoiceId },
+  })
+
+  if (!invoice) {
+    throw new Error('Invoice not found')
+  }
+
+  if (!['sent', 'viewed', 'overdue'].includes(invoice.status)) {
+    throw new Error('Can only send reminders for sent/viewed/overdue invoices')
+  }
+
+  const reminder = await prisma.$transaction(async (tx) => {
+    const rem = await tx.paymentReminder.create({
+      data: {
+        invoiceId: input.invoiceId,
+        reminderType: input.reminderType,
+        scheduledFor: input.scheduledFor,
+        emailTo: input.emailTo,
+        emailSubject: input.emailSubject,
+        emailBody: input.emailBody,
+        status: 'scheduled',
+      },
+    })
+
+    await tx.invoice.update({
+      where: { id: input.invoiceId },
+      data: {
+        reminderCount: { increment: 1 },
+        lastReminderAt: new Date(),
+      },
+    })
+
+    return rem
+  })
+
+  return reminder
+}
+
+export async function sendInvoiceReminder(reminderId: string) {
+  const reminder = await prisma.paymentReminder.findUnique({
+    where: { id: reminderId },
+    include: { invoice: { include: { client: true } } },
+  })
+
+  if (!reminder) {
+    throw new Error('Reminder not found')
+  }
+
+  if (reminder.status !== 'scheduled') {
+    throw new Error('Reminder already sent or cancelled')
+  }
+
+  await prisma.paymentReminder.update({
+    where: { id: reminderId },
+    data: {
+      status: 'sent',
+      sentAt: new Date(),
+    },
+  })
+
+  return reminder
+}
+
+// ============================================================================
+// BATCH OPERATIONS
+// ============================================================================
+
+export async function batchCreateInvoices(
+  inputs: Array<{
+    input: CreateInvoiceInput
+    lineItems: InvoiceLineItemInput[]
+  }>
+) {
+  const results: Array<{ success: boolean; invoice?: unknown; error?: string }> = []
+
+  for (const { input, lineItems } of inputs) {
+    try {
+      const invoice = await createInvoice(input, lineItems)
+      results.push({ success: true, invoice })
+    } catch (error) {
+      results.push({ success: false, error: (error as Error).message })
+    }
+  }
+
+  return {
+    total: inputs.length,
+    successful: results.filter((r) => r.success).length,
+    failed: results.filter((r) => !r.success).length,
+    results,
+  }
+}
+
+export async function batchSendInvoices(invoiceIds: string[], organizationId: string) {
+  const results: Array<{ invoiceId: string; success: boolean; error?: string }> = []
+
+  for (const invoiceId of invoiceIds) {
+    try {
+      await sendInvoice(invoiceId, organizationId)
+      results.push({ invoiceId, success: true })
+    } catch (error) {
+      results.push({ invoiceId, success: false, error: (error as Error).message })
+    }
+  }
+
+  return {
+    total: invoiceIds.length,
+    successful: results.filter((r) => r.success).length,
+    failed: results.filter((r) => !r.success).length,
+    results,
+  }
+}
+
+// ============================================================================
+// BILLING RATE UPDATE
+// ============================================================================
+
+export async function updateBillingRate(
+  id: string,
+  organizationId: string,
+  data: Partial<CreateBillingRateInput>
+) {
+  const rate = await prisma.billingRate.findFirst({
+    where: { id, organizationId },
+  })
+
+  if (!rate) {
+    throw new Error('Billing rate not found')
+  }
+
+  return prisma.billingRate.update({
+    where: { id },
+    data: {
+      userId: data.userId,
+      clientId: data.clientId,
+      matterId: data.matterId,
+      matterType: data.matterType,
+      rateType: data.rateType,
+      rate: data.rate ? new Decimal(data.rate) : undefined,
+      currency: data.currency,
+      effectiveDate: data.effectiveDate,
+      expirationDate: data.expirationDate,
+      isDefault: data.isDefault,
+    },
+  })
+}
+
+// ============================================================================
+// PDF GENERATION (Placeholder - requires PDF library integration)
+// ============================================================================
+
+export interface InvoicePdfData {
+  invoice: {
+    invoiceNumber: string
+    issueDate: Date
+    dueDate: Date
+    status: string
+    subtotal: number
+    taxAmount: number
+    totalAmount: number
+    balanceDue: number
+    notes?: string | null
+    termsAndConditions?: string | null
+  }
+  client: {
+    displayName: string
+    email?: string | null
+  }
+  lineItems: Array<{
+    description: string
+    quantity: number
+    rate: number
+    amount: number
+  }>
+  organization: {
+    name: string
+  }
+}
+
+export async function getInvoicePdfData(invoiceId: string, organizationId: string): Promise<InvoicePdfData | null> {
+  const invoice = await prisma.invoice.findFirst({
+    where: { id: invoiceId, organizationId },
+    include: {
+      client: true,
+      lineItems: { orderBy: { lineNumber: 'asc' } },
+      organization: true,
+    },
+  })
+
+  if (!invoice) {
+    return null
+  }
+
+  return {
+    invoice: {
+      invoiceNumber: invoice.invoiceNumber,
+      issueDate: invoice.issueDate,
+      dueDate: invoice.dueDate,
+      status: invoice.status,
+      subtotal: Number(invoice.subtotal),
+      taxAmount: Number(invoice.taxAmount),
+      totalAmount: Number(invoice.totalAmount),
+      balanceDue: Number(invoice.balanceDue),
+      notes: invoice.notes,
+      termsAndConditions: invoice.termsAndConditions,
+    },
+    client: {
+      displayName: invoice.client.displayName,
+      email: invoice.client.email,
+    },
+    lineItems: invoice.lineItems.map((li) => ({
+      description: li.description,
+      quantity: Number(li.quantity),
+      rate: Number(li.rate),
+      amount: Number(li.amount),
+    })),
+    organization: {
+      name: invoice.organization.name,
+    },
+  }
 }

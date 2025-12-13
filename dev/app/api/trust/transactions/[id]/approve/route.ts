@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { approveTrustTransaction } from '@/lib/finance/trust-service'
+import { getAuditContext } from '@/lib/audit-context'
 
 export async function POST(
   request: NextRequest,
@@ -41,7 +42,9 @@ export async function POST(
       return NextResponse.json({ error: 'Access denied' }, { status: 403 })
     }
 
-    await approveTrustTransaction(id, user.id)
+    const auditContext = getAuditContext(request)
+
+    await approveTrustTransaction(id, user.id, auditContext)
 
     return NextResponse.json({ message: 'Transaction approved' })
   } catch (error) {
